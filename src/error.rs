@@ -11,9 +11,10 @@ use std::{
 };
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T> = result::Result<T, OrcaError>;
-/// Possiable errors you may encounter.
+
+/// Possible errors you may encounter.
 #[derive(Debug)]
-pub enum OrcaError {
+enum Kind {
     /// Returned if a file is not expected to exist.
     FileExists(PathBuf),
     /// Returned if a file is expected to have a parent.
@@ -33,52 +34,74 @@ pub enum OrcaError {
     /// Wrapper around `io::Error`
     IoError(io::Error),
 }
+
+/// A stable error API interface.
+#[derive(Debug)]
+pub struct OrcaError(Kind);
 impl Error for OrcaError {}
+impl OrcaError {
+    /// Error constructor for `FileExists`.
+    pub(crate) const fn file_exists(path: PathBuf) -> Self {
+        Self(Kind::FileExists(path))
+    }
+    /// Error constructor for `FileHasNoParent`.
+    pub const fn file_has_no_parent(path: PathBuf) -> Self {
+        Self(Kind::FileHasNoParent(path))
+    }
+    /// Error constructor for `NoAnnotationFound`.
+    pub(crate) const fn no_annotation_found(class: String, name: String, version: String) -> Self {
+        Self(Kind::NoAnnotationFound(class, name, version))
+    }
+    /// Error constructor for `NoRegexMatch`.
+    pub(crate) const fn no_regex_match() -> Self {
+        Self(Kind::NoRegexMatch)
+    }
+}
 impl Display for OrcaError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Self::FileExists(path) => {
+        match &self.0 {
+            Kind::FileExists(path) => {
                 write!(f, "File `{}` already exists.", path.to_string_lossy())
             }
-            Self::FileHasNoParent(path) => {
+            Kind::FileHasNoParent(path) => {
                 write!(f, "File `{}` has no parent.", path.to_string_lossy())
             }
-            Self::NoAnnotationFound(class, name, version) => {
+            Kind::NoAnnotationFound(class, name, version) => {
                 write!(f, "No annotation found for `{name}:{version}` {class}.")
             }
-            Self::NoRegexMatch => {
+            Kind::NoRegexMatch => {
                 write!(f, "No match for regex.")
             }
-            Self::GlobError(error) => write!(f, "{error}"),
-            Self::GlobPaternError(error) => write!(f, "{error}"),
-            Self::SerdeYamlError(error) => write!(f, "{error}"),
-            Self::RegexError(error) => write!(f, "{error}"),
-            Self::IoError(error) => write!(f, "{error}"),
+            Kind::GlobError(error) => write!(f, "{error}"),
+            Kind::GlobPaternError(error) => write!(f, "{error}"),
+            Kind::SerdeYamlError(error) => write!(f, "{error}"),
+            Kind::RegexError(error) => write!(f, "{error}"),
+            Kind::IoError(error) => write!(f, "{error}"),
         }
     }
 }
 impl From<glob::GlobError> for OrcaError {
     fn from(error: glob::GlobError) -> Self {
-        Self::GlobError(error)
+        Self(Kind::GlobError(error))
     }
 }
 impl From<glob::PatternError> for OrcaError {
     fn from(error: glob::PatternError) -> Self {
-        Self::GlobPaternError(error)
+        Self(Kind::GlobPaternError(error))
     }
 }
 impl From<serde_yaml::Error> for OrcaError {
     fn from(error: serde_yaml::Error) -> Self {
-        Self::SerdeYamlError(error)
+        Self(Kind::SerdeYamlError(error))
     }
 }
 impl From<regex::Error> for OrcaError {
     fn from(error: regex::Error) -> Self {
-        Self::RegexError(error)
+        Self(Kind::RegexError(error))
     }
 }
 impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
-        Self::IoError(error)
+        Self(Kind::IoError(error))
     }
 }

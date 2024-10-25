@@ -12,9 +12,9 @@ use tempfile::tempdir;
 fn is_dir_two_levels_up_empty(file: &Path) -> Result<bool> {
     Ok(file
         .parent()
-        .ok_or_else(|| OrcaError::FileHasNoParent(file.to_path_buf()))?
+        .ok_or_else(|| OrcaError::file_has_no_parent(file.to_path_buf()))?
         .parent()
-        .ok_or_else(|| OrcaError::FileHasNoParent(file.to_path_buf()))?
+        .ok_or_else(|| OrcaError::file_has_no_parent(file.to_path_buf()))?
         .read_dir()?
         .next()
         .is_none())
