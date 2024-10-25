@@ -1,3 +1,4 @@
+use colored::Colorize;
 use glob;
 use regex;
 use serde_yaml;
@@ -61,10 +62,18 @@ impl Display for OrcaError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match &self.0 {
             Kind::FileExists(path) => {
-                write!(f, "File `{}` already exists.", path.to_string_lossy())
+                write!(
+                    f,
+                    "File `{}` already exists.",
+                    path.to_string_lossy().bright_cyan()
+                )
             }
             Kind::FileHasNoParent(path) => {
-                write!(f, "File `{}` has no parent.", path.to_string_lossy())
+                write!(
+                    f,
+                    "File `{}` has no parent.",
+                    path.to_string_lossy().bright_red()
+                )
             }
             Kind::NoAnnotationFound(class, name, version) => {
                 write!(f, "No annotation found for `{name}:{version}` {class}.")
