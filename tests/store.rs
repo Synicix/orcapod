@@ -3,13 +3,13 @@
 pub mod fixture;
 use fixture::{add_pod_storage, pod_style, store_test};
 use orcapod::{
-    error::{OrcaError, OrcaResult},
+    error::{OrcaError, Result},
     model::{to_yaml, Pod},
 };
 use std::{fs, path::Path};
 use tempfile::tempdir;
 
-fn is_dir_two_levels_up_empty(file: &Path) -> OrcaResult<bool> {
+fn is_dir_two_levels_up_empty(file: &Path) -> Result<bool> {
     Ok(file
         .parent()
         .ok_or_else(|| OrcaError::FileHasNoParent(file.to_path_buf()))?
@@ -21,7 +21,7 @@ fn is_dir_two_levels_up_empty(file: &Path) -> OrcaResult<bool> {
 }
 
 #[test]
-fn verify_pod_save_and_delete() -> OrcaResult<()> {
+fn verify_pod_save_and_delete() -> Result<()> {
     let store_directory = String::from(tempdir()?.path().to_string_lossy());
     {
         let pod_style = pod_style()?;

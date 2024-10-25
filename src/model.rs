@@ -1,5 +1,5 @@
 use crate::{
-    error::OrcaResult,
+    error::Result,
     util::{get_type_name, hash},
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -9,9 +9,14 @@ use std::{
     fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
+    result,
 };
 /// Converts a model instance into a consistent yaml.
-pub fn to_yaml<T: Serialize>(instance: &T) -> OrcaResult<String> {
+///
+/// # Errors
+///
+/// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
+pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
     let mut yaml = serde_yaml::to_string(
         &mapping
@@ -24,16 +29,21 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> OrcaResult<String> {
     Ok(yaml)
 }
 /// Instantiates a model from from yaml content and its unique hash.
+///
+/// # Errors
+///
+/// Will return `Err` if there is an issue converting YAML files for spec+annotation into a model
+/// instance.
 pub fn from_yaml<T: DeserializeOwned>(
     annotation_file: &Path,
     spec_file: &Path,
     hash: &str,
-) -> OrcaResult<T> {
+) -> Result<T> {
     let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(annotation_file)?)?;
     let spec_yaml = BufReader::new(fs::File::open(spec_file)?)
         .lines()
         .skip(1)
-        .collect::<Result<Vec<_>, _>>()?
+        .collect::<result::Result<Vec<_>, _>>()?
         .join("\n");
 
     let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&spec_yaml)?;
@@ -66,6 +76,10 @@ pub struct Pod {
 
 impl Pod {
     /// Construct a new pod instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `Pod` instance.
     pub fn new(
         annotation: Annotation,
         source_commit_url: String,
@@ -77,7 +91,7 @@ impl Pod {
         recommended_cpus: f32,
         recommended_memory: u64,
         required_gpu: Option<GPURequirement>,
-    ) -> OrcaResult<Self> {
+    ) -> Result<Self> {
         let pod_no_hash = Self {
             annotation,
             hash: String::new(),

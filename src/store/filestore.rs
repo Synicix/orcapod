@@ -1,5 +1,5 @@
 use crate::{
-    error::{OrcaError, OrcaResult},
+    error::{OrcaError, Result},
     model::{from_yaml, to_yaml, Pod},
     store::Store,
 };
@@ -18,7 +18,7 @@ pub struct LocalFileStore {
 }
 
 impl Store for LocalFileStore {
-    fn save_pod(&self, pod: &Pod) -> OrcaResult<()> {
+    fn save_pod(&self, pod: &Pod) -> Result<()> {
         let class = "pod";
         // Save the annotation file and throw and error if exist
         Self::save_file(
@@ -41,7 +41,7 @@ impl Store for LocalFileStore {
         Ok(())
     }
 
-    fn load_pod(&self, name: &str, version: &str) -> OrcaResult<Pod> {
+    fn load_pod(&self, name: &str, version: &str) -> Result<Pod> {
         let class = "pod".to_owned();
 
         let (_, (hash, _)) =
@@ -58,10 +58,10 @@ impl Store for LocalFileStore {
         )
     }
 
-    fn list_pod(&self) -> OrcaResult<BTreeMap<String, Vec<String>>> {
+    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>> {
         let (names, (hashes, versions)) =
             Self::parse_annotation_path(&self.make_annotation_path("pod", "*", "*", "*"))?
-                .collect::<Result<(Vec<_>, (Vec<_>, Vec<_>)), _>>()?;
+                .collect::<Result<(Vec<_>, (Vec<_>, Vec<_>))>>()?;
 
         Ok(BTreeMap::from([
             (String::from("name"), names),
@@ -70,7 +70,7 @@ impl Store for LocalFileStore {
         ]))
     }
 
-    fn delete_pod(&self, name: &str, version: &str) -> OrcaResult<()> {
+    fn delete_pod(&self, name: &str, version: &str) -> Result<()> {
         // assumes propagate = false
         let class = "pod".to_owned();
         let versions = self.get_pod_version_map(name)?;
@@ -143,7 +143,7 @@ impl LocalFileStore {
 
     fn parse_annotation_path(
         path: &Path,
-    ) -> OrcaResult<impl Iterator<Item = OrcaResult<(String, (String, String))>>> {
+    ) -> Result<impl Iterator<Item = Result<(String, (String, String))>>> {
         let paths = glob::glob(&path.to_string_lossy())?.map(|filepath| {
             let re = Regex::new(
                 r"(?x)
@@ -168,18 +168,18 @@ impl LocalFileStore {
         Ok(paths)
     }
 
-    fn get_pod_version_map(&self, name: &str) -> OrcaResult<BTreeMap<String, String>> {
+    fn get_pod_version_map(&self, name: &str) -> Result<BTreeMap<String, String>> {
         Self::parse_annotation_path(&self.make_annotation_path("pod", "*", name, "*"))?
-            .map(|metadata| -> OrcaResult<(String, String)> {
+            .map(|metadata| -> Result<(String, String)> {
                 let resolved_metadata = metadata?;
                 let hash = resolved_metadata.1 .0;
                 let version = resolved_metadata.1 .1;
                 Ok((version, hash))
             })
-            .collect::<Result<BTreeMap<String, String>, _>>()
+            .collect::<Result<BTreeMap<String, String>>>()
     }
 
-    fn save_file(file: &Path, content: &str, fail_if_exists: bool) -> OrcaResult<()> {
+    fn save_file(file: &Path, content: &str, fail_if_exists: bool) -> Result<()> {
         if let Some(parent) = file.parent() {
             fs::create_dir_all(parent)?;
         }

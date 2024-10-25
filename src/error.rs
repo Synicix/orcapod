@@ -7,9 +7,10 @@ use std::{
     fmt::{Display, Formatter},
     io,
     path::PathBuf,
+    result,
 };
 /// Shorthand for a Result that returns an `OrcaError`.
-pub type OrcaResult<T> = Result<T, OrcaError>;
+pub type Result<T> = result::Result<T, OrcaError>;
 /// Possiable errors you may encounter.
 #[derive(Debug)]
 pub enum OrcaError {

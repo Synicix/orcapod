@@ -4,12 +4,12 @@ pub mod fixture;
 use fixture::pod_style;
 use indoc::indoc;
 use orcapod::{
-    error::OrcaResult,
+    error::Result,
     model::{to_yaml, Pod},
 };
 
 #[test]
-fn verify_hash() -> OrcaResult<()> {
+fn verify_hash() -> Result<()> {
     assert_eq!(
         pod_style()?.hash,
         "13D69656D396C272588DD875B2802FAEE1A56BD985E3C43C7DB276A373BC9DDB"
@@ -18,7 +18,7 @@ fn verify_hash() -> OrcaResult<()> {
 }
 
 #[test]
-fn verify_pod_to_yaml() -> OrcaResult<()> {
+fn verify_pod_to_yaml() -> Result<()> {
     assert_eq!(
         to_yaml::<Pod>(&pod_style()?)?,
         indoc! {"

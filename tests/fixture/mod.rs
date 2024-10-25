@@ -1,12 +1,17 @@
+#![expect(
+    clippy::missing_errors_doc,
+    reason = "Integration tests won't be included in documentation."
+)]
+
 use orcapod::{
-    error::OrcaResult,
+    error::Result,
     model::{Annotation, Pod, StreamInfo},
     store::{filestore::LocalFileStore, Store},
 };
 use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf};
 use tempfile::tempdir;
 
-pub fn pod_style() -> OrcaResult<Pod> {
+pub fn pod_style() -> Result<Pod> {
     Pod::new(
         Annotation {
             name: "style-transfer".to_owned(),
@@ -51,7 +56,7 @@ pub struct TestLocalStore {
     store: LocalFileStore,
 }
 
-pub fn store_test(store_directory: Option<&str>) -> OrcaResult<TestLocalStore> {
+pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
     impl Deref for TestLocalStore {
         type Target = LocalFileStore;
         fn deref(&self) -> &Self::Target {
@@ -79,7 +84,7 @@ pub struct TestLocallyStoredPod<'base> {
     pod: Pod,
 }
 
-pub fn add_pod_storage(pod: Pod, store: &TestLocalStore) -> OrcaResult<TestLocallyStoredPod> {
+pub fn add_pod_storage(pod: Pod, store: &TestLocalStore) -> Result<TestLocallyStoredPod> {
     impl<'base> Deref for TestLocallyStoredPod<'base> {
         type Target = Pod;
         fn deref(&self) -> &Self::Target {
