@@ -128,7 +128,7 @@ impl DerefMut for TestLocalStore {
 #[expect(clippy::expect_used, reason = "test")]
 impl Drop for TestLocalStore {
     fn drop(&mut self) {
-        fs::remove_dir_all(self.store.directory.as_path()).expect("Failed to teardown store.");
+        fs::remove_dir_all(self.store.get_directory()).expect("Failed to teardown store.");
     }
 }
 
@@ -152,25 +152,25 @@ impl TestLocalStore {
         }
     }
 
-    pub fn save_item(&mut self, item: &Item) -> Result<()> {
+    pub fn save_item(&self, item: &Item) -> Result<()> {
         match item {
             Item::Pod(pod) => self.store.save_pod(pod),
         }
     }
 
-    pub fn load_item(&mut self, item_type: &ItemType, item_key: &ItemKey) -> Result<Item> {
+    pub fn load_item(&self, item_type: &ItemType, item_key: &ItemKey) -> Result<Item> {
         match item_type {
             ItemType::Pod => Ok(Item::Pod(self.store.load_pod(item_key)?)),
         }
     }
 
-    pub fn list_item(&mut self, item_type: &ItemType) -> Result<&BTreeMap<String, String>> {
+    pub fn list_item(&self, item_type: &ItemType) -> Result<BTreeMap<String, String>> {
         match item_type {
             ItemType::Pod => self.store.list_pod(),
         }
     }
 
-    pub fn delete_item(&mut self, item_type: &ItemType, item_key: &ItemKey) -> Result<()> {
+    pub fn delete_item(&self, item_type: &ItemType, item_key: &ItemKey) -> Result<()> {
         match item_type {
             ItemType::Pod => self.store.delete_pod(item_key),
         }
@@ -189,8 +189,8 @@ impl TestLocalStore {
 }
 
 pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
-    let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
+    let tmp_directory = tempdir()?.path().to_owned();
     let store =
-        store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
+        store_directory.map_or_else(|| LocalFileStore::new(&tmp_directory), LocalFileStore::new);
     Ok(TestLocalStore { store })
 }

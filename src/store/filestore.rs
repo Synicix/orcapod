@@ -1,5 +1,5 @@
 use crate::{
-    error::{FileExists, FileHasNoParent, KeyMissingFromBTree, NoAnnotationFound},
+    error::{FileExists, FileHasNoParent, NoAnnotationFound},
     model::{from_yaml, to_yaml, Annotation, Pod},
     util::get_type_name,
 };
@@ -17,48 +17,32 @@ use super::{ItemKey, Store};
 
 #[derive(Debug)]
 pub struct LocalFileStore {
-    pub directory: PathBuf,
-    // Where BTreeString<struct_type, BTreeMap<name-version, hash>
-    name_ver_cache: BTreeMap<String, BTreeMap<String, String>>,
+    directory: PathBuf,
 }
 
 impl Store for LocalFileStore {
-    fn save_pod(&mut self, pod: &Pod) -> Result<()> {
+    fn save_pod(&self, pod: &Pod) -> Result<()> {
         self.save_item(pod, &pod.hash, pod.annotation.as_ref())
     }
 
-    fn load_pod(&mut self, item_key: &ItemKey) -> Result<Pod> {
+    fn load_pod(&self, item_key: &ItemKey) -> Result<Pod> {
         self.load_item::<Pod>(item_key)
     }
 
     /// Return the name version index btree where key is name-version and value is hash of pod
-    fn list_pod(&mut self) -> Result<&BTreeMap<String, String>> {
-        self.build_cache_if_not_exist::<Pod>()?;
-        Ok(self
-            .name_ver_cache
-            .get(&get_type_name::<Pod>())
-            .ok_or_else(|| KeyMissingFromBTree {
-                key: get_type_name::<Pod>(),
-            })?)
+    fn list_pod(&self) -> Result<BTreeMap<String, String>> {
+        self.build_name_ver_tree::<Pod>()
     }
 
-    fn delete_pod(&mut self, item_key: &ItemKey) -> Result<()> {
+    fn delete_pod(&self, item_key: &ItemKey) -> Result<()> {
         self.delete_item::<Pod>(item_key)
     }
 
-    fn delete_annotation<T>(&mut self, name: &str, version: &str) -> Result<()> {
+    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
         // Search the name ver index for the hash
-        let hash = self.get_hash_from_cache::<T>(name, version)?;
+        let hash = self.get_hash_from_name_ver_tree::<T>(name, version)?;
 
         fs::remove_file(self.make_annotation_path::<T>(&hash, name, version))?;
-
-        // Remove from cache
-        self.name_ver_cache
-            .get_mut(&get_type_name::<T>())
-            .ok_or_else(|| KeyMissingFromBTree {
-                key: get_type_name::<T>(),
-            })?
-            .remove(&Self::make_name_ver_cache_key(name, version));
         Ok(())
     }
 }
@@ -67,8 +51,11 @@ impl LocalFileStore {
     pub fn new(directory: impl AsRef<Path>) -> Self {
         Self {
             directory: directory.as_ref().into(),
-            name_ver_cache: BTreeMap::new(),
         }
+    }
+
+    pub fn get_directory(&self) -> &Path {
+        &self.directory
     }
 
     fn make_dir_path<T>(&self, hash: &str) -> PathBuf {
@@ -99,7 +86,7 @@ impl LocalFileStore {
     /// self.save_item(pod, &pod.annotation, &pod.hash).unwrap()
     /// ```
     fn save_item<T: Serialize>(
-        &mut self,
+        &self,
         item: &T,
         hash: &str,
         annotation: Option<&Annotation>,
@@ -119,26 +106,17 @@ impl LocalFileStore {
                 &serde_yaml::to_string(value)?,
                 true,
             )?;
-
-            // Update name-ver_cache
-            self.build_cache_if_not_exist::<T>()?;
-            self.name_ver_cache
-                .get_mut(&get_type_name::<T>())
-                .ok_or_else(|| KeyMissingFromBTree {
-                    key: get_type_name::<T>(),
-                })?
-                .insert(format!("{}-{}", value.name, value.version), hash.to_owned());
         }
 
         Ok(())
     }
 
     /// Generic function for loading spec.yaml into memory
-    fn load_item<T: DeserializeOwned>(&mut self, item_key: &ItemKey) -> Result<T> {
+    fn load_item<T: DeserializeOwned>(&self, item_key: &ItemKey) -> Result<T> {
         match item_key {
             ItemKey::NameVer(name, version) => {
                 // Search the name-ver index
-                let hash = self.get_hash_from_cache::<T>(name, version)?;
+                let hash = self.get_hash_from_name_ver_tree::<T>(name, version)?;
 
                 // Get the spec and annotation yaml
                 let spec_yaml = fs::read_to_string(self.make_path::<T>(&hash, "spec.yaml"))?;
@@ -156,75 +134,28 @@ impl LocalFileStore {
         }
     }
 
-    fn delete_item<T>(&mut self, item_key: &ItemKey) -> Result<()> {
-        match item_key {
+    fn delete_item<T>(&self, item_key: &ItemKey) -> Result<()> {
+        let hash = match item_key {
             ItemKey::NameVer(name, version) => {
                 // Search the name-ver index
-                let hash = self.get_hash_from_cache::<T>(name, version)?;
-
-                // Remove the entire item based on hash
-                fs::remove_dir_all(self.make_dir_path::<T>(&hash))?;
-
-                // Delete everyting from cache that has the same hash
-                let cache = self
-                    .name_ver_cache
-                    .get_mut(&get_type_name::<T>())
-                    .ok_or_else(|| KeyMissingFromBTree {
-                        key: get_type_name::<T>(),
-                    })?;
-
-                // Remove the target key first
-                cache.remove(&Self::make_name_ver_cache_key(name, version));
-
-                let mut keys_to_delete: Vec<String> = Vec::new();
-                // Search through the remaining values and make sure there is no occurance of hash left
-                for (annotation_key, item_hash) in cache.clone() {
-                    if hash == *item_hash {
-                        keys_to_delete.push(annotation_key);
-                    }
-                }
-
-                for key in keys_to_delete {
-                    cache.remove(&key);
-                }
+                self.get_hash_from_name_ver_tree::<T>(name, version)?
             }
-            ItemKey::Hash(hash) => {
-                fs::remove_dir_all(self.make_dir_path::<T>(hash))?;
+            ItemKey::Hash(hash) => hash.to_owned(),
+        };
 
-                let cache = self
-                    .name_ver_cache
-                    .get_mut(&get_type_name::<T>())
-                    .ok_or_else(|| KeyMissingFromBTree {
-                        key: get_type_name::<T>(),
-                    })?;
-
-                let mut keys_to_delete: Vec<String> = Vec::new();
-                // Search through the remaining values and make sure there is no occurance of hash left
-                for (annotation_key, item_hash) in cache.clone() {
-                    if *hash == *item_hash {
-                        keys_to_delete.push(annotation_key);
-                    }
-                }
-
-                for key in keys_to_delete {
-                    cache.remove(&key);
-                }
-            }
-        }
+        fs::remove_dir_all(self.make_dir_path::<T>(&hash))?;
         Ok(())
     }
 
-    fn build_name_ver_cache<T>(&mut self) -> Result<()> {
-        let type_name = get_type_name::<T>();
-        // Check if there is a cache tree for the given object type
+    fn build_name_ver_tree<T>(&self) -> Result<BTreeMap<String, String>> {
         // Construct the cache with glob and regex
-        let re = Regex::new(
-            r"^.*\/pod\/(?<hash>[a-z0-9]+)\/annotation\/(?<name>[A-z0-9\- ]+)-(?<ver>[0-9]+.[0-9]+.[0-9]+).yaml$",
-        )?;
+        let type_name = get_type_name::<T>();
+        let re = Regex::new(&format!(
+            r"^.*\/{type_name}\/(?<hash>[a-z0-9]+)\/annotations\/(?<name>[A-z0-9\- ]+)-(?<ver>[0-9]+.[0-9]+.[0-9]+).yaml$"
+        ))?;
 
         // Create the missing cache btree for the item
-        self.name_ver_cache
-            .insert(type_name.clone(), BTreeMap::new());
+        let mut name_ver_tree = BTreeMap::new();
 
         let search_pattern = self.make_dir_path::<T>("*").join("annotations/*");
 
@@ -236,45 +167,27 @@ impl LocalFileStore {
             };
 
             // Insert into the cache
-            self.name_ver_cache
-                .get_mut(&type_name)
-                .ok_or_else(|| KeyMissingFromBTree {
-                    key: get_type_name::<T>(),
-                })?
-                .insert(
-                    format!("{}-{}", &cap["name"].to_string(), &cap["ver"].to_string()),
-                    cap["hash"].into(),
-                );
+            name_ver_tree.insert(
+                format!("{}-{}", &cap["name"].to_string(), &cap["ver"].to_string()),
+                cap["hash"].into(),
+            );
         }
-        Ok(())
+        Ok(name_ver_tree)
     }
 
-    fn build_cache_if_not_exist<T>(&mut self) -> Result<()> {
-        if !self.name_ver_cache.contains_key(&get_type_name::<T>()) {
-            self.build_name_ver_cache::<T>()?;
-        }
-        Ok(())
-    }
-
-    fn get_hash_from_cache<T>(&mut self, name: &str, version: &str) -> Result<String> {
-        self.build_cache_if_not_exist::<T>()?;
-        let hash = self
-            .name_ver_cache
-            .get(&get_type_name::<T>())
-            .ok_or_else(|| KeyMissingFromBTree {
-                key: get_type_name::<T>(),
-            })?
-            .get(&format!("{name}-{version}"))
+    fn get_hash_from_name_ver_tree<T>(&self, name: &str, version: &str) -> Result<String> {
+        Ok(self
+            .build_name_ver_tree::<T>()?
+            .get(&Self::make_name_ver_tree_key(name, version))
             .ok_or_else(|| NoAnnotationFound {
                 class: get_type_name::<T>(),
                 name: name.into(),
                 version: version.into(),
-            })?;
-
-        Ok(hash.to_owned())
+            })?
+            .to_owned())
     }
 
-    fn make_name_ver_cache_key(name: &str, version: &str) -> String {
+    fn make_name_ver_tree_key(name: &str, version: &str) -> String {
         format!("{name}-{version}")
     }
 
