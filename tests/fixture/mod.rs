@@ -69,11 +69,11 @@ pub fn get_test_item(item_type: &ItemType) -> Result<Item> {
 
 pub fn get_test_pod() -> Result<Pod> {
     Pod::new(
-        Annotation {
+        Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod.".to_owned(),
             version: "0.67.0".to_owned(),
-        },
+        }),
         "https://github.com/zenml-io/zenml/tree/0.67.0".to_owned(),
         "zenmldocker/zenml-server:0.67.0".to_owned(),
         "tail -f /dev/null".to_owned(),
@@ -164,7 +164,7 @@ impl TestLocalStore {
         }
     }
 
-    pub fn list_item(&self, item_type: &ItemType) -> Result<BTreeMap<String, String>> {
+    pub fn list_item(&self, item_type: &ItemType) -> Result<BTreeMap<String, Vec<String>>> {
         match item_type {
             ItemType::Pod => self.store.list_pod(),
         }

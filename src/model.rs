@@ -72,7 +72,7 @@ impl Pod {
     ///
     /// Will return `Err` if there is an issue initializing a `Pod` instance.
     pub fn new(
-        annotation: Annotation,
+        annotation: Option<Annotation>,
         source_commit_url: String,
         image: String,
         command: String,
@@ -84,7 +84,7 @@ impl Pod {
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self> {
         let pod_no_hash = Self {
-            annotation: Some(annotation),
+            annotation,
             hash: String::new(),
             source_commit_url,
             image,

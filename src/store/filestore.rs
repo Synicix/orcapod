@@ -29,9 +29,38 @@ impl Store for LocalFileStore {
         self.load_item::<Pod>(item_key)
     }
 
-    /// Return the name version index btree where key is name-version and value is hash of pod
-    fn list_pod(&self) -> Result<BTreeMap<String, String>> {
-        self.build_name_ver_tree::<Pod>()
+    /// Return Btree where key is column name and value is a vec of values
+    /// Are we okay with returning a bunch of strings? For now it works but later on like adding version
+    /// this will break...
+    #[expect(
+        clippy::unwrap_in_result,
+        reason = "It shouldn't failed as we added the keys ourselves at the start"
+    )]
+    #[expect(
+        clippy::unwrap_used,
+        reason = "It shouldn't failed as we added the keys ourselves at the start"
+    )]
+    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>> {
+        let mut table: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        table.insert("name".to_owned(), Vec::new());
+        table.insert("version".to_owned(), Vec::new());
+        table.insert("hash".to_owned(), Vec::new());
+        for (key, hash) in self.build_name_ver_tree::<Pod>()? {
+            let split_result = key.rsplit_once('-').ok_or_else(|| {
+                OrcaError::from(Kind::SplitResultError(key.clone(), '-'.to_string()))
+            })?;
+            table
+                .get_mut("name")
+                .unwrap()
+                .push(split_result.0.to_owned());
+            table
+                .get_mut("version")
+                .unwrap()
+                .push(split_result.1.to_owned());
+            table.get_mut("hash").unwrap().push(hash.clone());
+        }
+
+        Ok(table)
     }
 
     fn delete_pod(&self, item_key: &ItemKey) -> Result<()> {
@@ -158,7 +187,7 @@ impl LocalFileStore {
             r"^.*\/{type_name}\/(?<hash>[a-z0-9]+)\/annotations\/(?<name>[A-z0-9\- ]+)-(?<ver>[0-9]+.[0-9]+.[0-9]+).yaml$"
         ))?;
 
-        // Create the missing cache btree for the item
+        // Create tree where name_ver is key and value is hash
         let mut name_ver_tree = BTreeMap::new();
 
         let search_pattern = self.make_dir_path::<T>("*").join("annotations/*");
@@ -170,7 +199,6 @@ impl LocalFileStore {
                 continue;
             };
 
-            // Insert into the cache
             name_ver_tree.insert(
                 format!("{}-{}", &cap["name"].to_string(), &cap["ver"].to_string()),
                 cap["hash"].into(),
