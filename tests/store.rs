@@ -1,23 +1,13 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{add_pod_storage, pod_style, store_test};
-use orcapod::{
-    error::{OrcaError, Result},
-    model::{to_yaml, Pod},
-};
+use fixture::{add_pod_storage, pod_style, store_test, Result};
+use orcapod::model::{to_yaml, Pod};
 use std::{fs, path::Path};
 use tempfile::tempdir;
 
-fn is_dir_two_levels_up_empty(file: &Path) -> Result<bool> {
-    Ok(file
-        .parent()
-        .ok_or_else(|| OrcaError::file_has_no_parent(file.to_path_buf()))?
-        .parent()
-        .ok_or_else(|| OrcaError::file_has_no_parent(file.to_path_buf()))?
-        .read_dir()?
-        .next()
-        .is_none())
+fn is_dir_two_levels_up_empty(file: &Path) -> Option<bool> {
+    Some(file.parent()?.parent()?.read_dir().ok()?.next().is_none())
 }
 
 #[test]
@@ -41,8 +31,8 @@ fn verify_pod_save_and_delete() -> Result<()> {
         };
         assert!(!spec_file.exists());
         assert!(!annotation_file.exists());
-        assert!(is_dir_two_levels_up_empty(&spec_file)?);
-        assert!(is_dir_two_levels_up_empty(&annotation_file)?);
+        assert_eq!(is_dir_two_levels_up_empty(&spec_file), Some(true));
+        assert_eq!(is_dir_two_levels_up_empty(&annotation_file), Some(true));
     };
     assert!(!fs::exists(&store_directory)?);
     Ok(())
