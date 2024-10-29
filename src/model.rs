@@ -1,16 +1,8 @@
-use crate::{
-    error::Result,
-    util::{get_type_name, hash},
-};
+use crate::error::Result;
+use crate::util::{get_type_name, hash};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
-use std::{
-    collections::BTreeMap,
-    fs,
-    io::{BufRead, BufReader},
-    path::{Path, PathBuf},
-    result,
-};
+use std::{collections::BTreeMap, path::PathBuf};
 /// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
@@ -56,10 +48,10 @@ pub fn from_yaml<T: DeserializeOwned>(
 // --- core model structs ---
 
 /// A reusable, containerized computational unit.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
-    pub annotation: Annotation,
+    pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
     pub hash: String,
     source_commit_url: String,
@@ -114,7 +106,7 @@ impl Pod {
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Annotation {
     /// A unique name.
     pub name: String,
@@ -124,7 +116,7 @@ pub struct Annotation {
     pub description: String,
 }
 /// Specification for GPU requirements in computation.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
     /// GPU model specification.
     pub model: GPUModel,
@@ -143,7 +135,7 @@ pub enum GPUModel {
 }
 /// Streams are named and represent an abstration for the file(s) that represent some particular
 /// data.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
     /// Path to stream file.
     pub path: PathBuf,

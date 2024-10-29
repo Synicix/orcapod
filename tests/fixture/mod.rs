@@ -1,5 +1,5 @@
-use anyhow::Result;
 use orcapod::{
+    error::Result,
     model::{to_yaml, Annotation, Pod, StreamInfo},
     store::{filestore::LocalFileStore, ItemKey, Store},
 };
@@ -183,7 +183,7 @@ impl TestLocalStore {
         version: &str,
     ) -> Result<()> {
         match item_type {
-            ItemType::Pod => self.store.delete_annotation::<Pod>(name, version),
+            ItemType::Pod => Ok(self.store.delete_annotation::<Pod>(name, version)?),
         }
     }
 }

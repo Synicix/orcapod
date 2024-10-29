@@ -1,9 +1,8 @@
 use crate::{
-    error::{FileExists, FileHasNoParent, NoAnnotationFound},
+    error::{Kind, OrcaError, Result},
     model::{from_yaml, to_yaml, Annotation, Pod},
     util::get_type_name,
 };
-use anyhow::Result;
 use colored::Colorize;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Serialize};
@@ -15,6 +14,7 @@ use std::{
 
 use super::{ItemKey, Store};
 
+/// Local storage system for orca items implmenting store
 #[derive(Debug)]
 pub struct LocalFileStore {
     directory: PathBuf,
@@ -48,12 +48,14 @@ impl Store for LocalFileStore {
 }
 
 impl LocalFileStore {
+    /// New function that takes the directory as where to save the files
     pub fn new(directory: impl AsRef<Path>) -> Self {
         Self {
             directory: directory.as_ref().into(),
         }
     }
 
+    /// Getter function for directory
     pub fn get_directory(&self) -> &Path {
         &self.directory
     }
@@ -67,10 +69,12 @@ impl LocalFileStore {
         ))
     }
 
+    /// Helper function for making path to a given item type T
     pub fn make_path<T>(&self, hash: &str, file_name: &str) -> PathBuf {
         self.make_dir_path::<T>(hash).join(file_name)
     }
 
+    /// Helper function to create the path to the annotations files
     pub fn make_annotation_path<T>(&self, hash: &str, name: &str, version: &str) -> PathBuf {
         self.make_dir_path::<T>(hash)
             .join("annotations")
@@ -93,7 +97,7 @@ impl LocalFileStore {
     ) -> Result<()> {
         // Save the item first
         Self::save_file(
-            &self.make_path::<T>(hash, "spec.yaml"),
+            self.make_path::<T>(hash, "spec.yaml"),
             &to_yaml::<T>(item)?,
             false,
         )?;
@@ -102,7 +106,7 @@ impl LocalFileStore {
         if let Some(value) = annotation {
             // Annotation exist, thus save it
             Self::save_file(
-                &self.make_annotation_path::<T>(hash, &value.name, &value.version),
+                self.make_annotation_path::<T>(hash, &value.name, &value.version),
                 &serde_yaml::to_string(value)?,
                 true,
             )?;
@@ -179,10 +183,12 @@ impl LocalFileStore {
         Ok(self
             .build_name_ver_tree::<T>()?
             .get(&Self::make_name_ver_tree_key(name, version))
-            .ok_or_else(|| NoAnnotationFound {
-                class: get_type_name::<T>(),
-                name: name.into(),
-                version: version.into(),
+            .ok_or_else(|| {
+                OrcaError::from(Kind::NoAnnotationFound(
+                    get_type_name::<T>(),
+                    name.into(),
+                    version.into(),
+                ))
             })?
             .to_owned())
     }
@@ -192,25 +198,31 @@ impl LocalFileStore {
     }
 
     // Help save file function
-    fn save_file(path: &PathBuf, content: impl AsRef<[u8]>, fail_if_exists: bool) -> Result<()> {
+    fn save_file(
+        path: impl AsRef<Path>,
+        content: impl AsRef<[u8]>,
+        fail_if_exists: bool,
+    ) -> Result<()> {
         fs::create_dir_all(
-            path.parent()
-                .ok_or_else(|| FileHasNoParent { path: path.clone() })?,
+            path.as_ref().parent().ok_or_else(|| {
+                OrcaError::from(Kind::FileHasNoParent(path.as_ref().to_path_buf()))
+            })?,
         )?;
-        let file_exists = fs::exists(path)?;
-        if file_exists {
+        if path.as_ref().exists() {
             if fail_if_exists {
-                return Err(FileExists { path: path.clone() }.into());
+                return Err(OrcaError::from(Kind::FileExists(
+                    path.as_ref().to_path_buf(),
+                )));
             }
 
             println!(
                 "Skip saving `{}` since it is already stored.",
-                path.to_string_lossy().bright_cyan(),
+                path.as_ref().to_string_lossy().bright_cyan(),
             );
             return Ok(());
         }
 
-        fs::write(path, content.as_ref())?;
+        fs::write(path.as_ref(), content.as_ref())?;
         Ok(())
     }
 }
