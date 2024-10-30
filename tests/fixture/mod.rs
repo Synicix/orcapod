@@ -1,7 +1,8 @@
+use orcapod::error::Result;
+use orcapod::store::ModelInfo;
 use orcapod::{
-    error::Result,
     model::{to_yaml, Annotation, Pod, StreamInfo},
-    store::{filestore::LocalFileStore, ItemKey, Store},
+    store::{filestore::LocalFileStore, ModelID, Store},
 };
 use std::{
     collections::BTreeMap,
@@ -158,19 +159,19 @@ impl TestLocalStore {
         }
     }
 
-    pub fn load_item(&self, item_type: &ItemType, item_key: &ItemKey) -> Result<Item> {
+    pub fn load_item(&self, item_type: &ItemType, item_key: &ModelID) -> Result<Item> {
         match item_type {
             ItemType::Pod => Ok(Item::Pod(self.store.load_pod(item_key)?)),
         }
     }
 
-    pub fn list_item(&self, item_type: &ItemType) -> Result<BTreeMap<String, Vec<String>>> {
+    pub fn list_item(&self, item_type: &ItemType) -> Result<Vec<ModelInfo>> {
         match item_type {
             ItemType::Pod => self.store.list_pod(),
         }
     }
 
-    pub fn delete_item(&self, item_type: &ItemType, item_key: &ItemKey) -> Result<()> {
+    pub fn delete_item(&self, item_type: &ItemType, item_key: &ModelID) -> Result<()> {
         match item_type {
             ItemType::Pod => self.store.delete_pod(item_key),
         }

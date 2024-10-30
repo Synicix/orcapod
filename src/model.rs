@@ -1,5 +1,7 @@
-use crate::error::Result;
-use crate::util::{get_type_name, hash};
+use crate::{
+    error::Result,
+    util::{get_type_name, hash},
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::{collections::BTreeMap, path::PathBuf};

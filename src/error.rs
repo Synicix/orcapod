@@ -12,6 +12,7 @@ use std::{
 };
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T> = anyhow::Result<T, OrcaError>;
+// pub type Result<T> = result::Result<T, OrcaError>;
 
 /// Possible errors you may encounter.
 #[derive(Debug)]
@@ -30,8 +31,6 @@ pub(crate) enum Kind {
     RegexError(regex::Error),
     /// Wrapper around `serde_yaml::Error`
     SerdeYamlError(serde_yaml::Error),
-    /// Split result error
-    SplitResultError(String, String),
     /// Wrapper around `io::Error`
     IoError(io::Error),
 }
@@ -63,14 +62,6 @@ impl Display for OrcaError {
             Kind::GlobError(error) => write!(f, "{error}"),
             Kind::GlobPaternError(error) => write!(f, "{error}"),
             Kind::SerdeYamlError(error) => write!(f, "{error}"),
-            Kind::SplitResultError(string, delimiter) => write!(
-                f,
-                "{}{}{}{}",
-                "Failed to split string: ".bright_red(),
-                string.bright_cyan(),
-                " with delimiter ".bright_red(),
-                delimiter.bright_cyan()
-            ),
             Kind::RegexError(error) => write!(f, "{error}"),
             Kind::IoError(error) => write!(f, "{error}"),
         }

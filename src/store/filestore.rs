@@ -12,7 +12,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{ItemKey, Store};
+use super::{ModelID, ModelInfo, Store};
+
+const SPEC_FILE_NAME: &str = "spec.yaml";
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct NameVerTreeKey {
+    name: String,
+    version: String,
+}
 
 /// Local storage system for orca items implmenting store
 #[derive(Debug)]
@@ -22,49 +30,32 @@ pub struct LocalFileStore {
 
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<()> {
-        self.save_item(pod, &pod.hash, pod.annotation.as_ref())
+        self.save_model(pod, &pod.hash, pod.annotation.as_ref())
     }
 
-    fn load_pod(&self, item_key: &ItemKey) -> Result<Pod> {
-        self.load_item::<Pod>(item_key)
+    fn load_pod(&self, item_key: &ModelID) -> Result<Pod> {
+        self.load_model::<Pod>(item_key)
     }
 
     /// Return Btree where key is column name and value is a vec of values
     /// Are we okay with returning a bunch of strings? For now it works but later on like adding version
     /// this will break...
-    #[expect(
-        clippy::unwrap_in_result,
-        reason = "It shouldn't failed as we added the keys ourselves at the start"
-    )]
-    #[expect(
-        clippy::unwrap_used,
-        reason = "It shouldn't failed as we added the keys ourselves at the start"
-    )]
-    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>> {
-        let mut table: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        table.insert("name".to_owned(), Vec::new());
-        table.insert("version".to_owned(), Vec::new());
-        table.insert("hash".to_owned(), Vec::new());
-        for (key, hash) in self.build_name_ver_tree::<Pod>()? {
-            let split_result = key.rsplit_once('-').ok_or_else(|| {
-                OrcaError::from(Kind::SplitResultError(key.clone(), '-'.to_string()))
-            })?;
-            table
-                .get_mut("name")
-                .unwrap()
-                .push(split_result.0.to_owned());
-            table
-                .get_mut("version")
-                .unwrap()
-                .push(split_result.1.to_owned());
-            table.get_mut("hash").unwrap().push(hash.clone());
+    fn list_pod(&self) -> Result<Vec<ModelInfo>> {
+        let name_ver_tree = self.build_name_ver_tree::<Pod>()?;
+        let mut models = Vec::with_capacity(name_ver_tree.len());
+        for (key, hash) in name_ver_tree {
+            models.push(ModelInfo {
+                name: key.name,
+                version: key.version,
+                hash,
+            });
         }
 
-        Ok(table)
+        Ok(models)
     }
 
-    fn delete_pod(&self, item_key: &ItemKey) -> Result<()> {
-        self.delete_item::<Pod>(item_key)
+    fn delete_pod(&self, item_key: &ModelID) -> Result<()> {
+        self.delete_model::<Pod>(item_key)
     }
 
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
@@ -118,7 +109,7 @@ impl LocalFileStore {
     /// let pod = Pod::new(); // For example doesn't actually work
     /// self.save_item(pod, &pod.annotation, &pod.hash).unwrap()
     /// ```
-    fn save_item<T: Serialize>(
+    fn save_model<T: Serialize>(
         &self,
         item: &T,
         hash: &str,
@@ -126,7 +117,7 @@ impl LocalFileStore {
     ) -> Result<()> {
         // Save the item first
         Self::save_file(
-            self.make_path::<T>(hash, "spec.yaml"),
+            self.make_path::<T>(hash, SPEC_FILE_NAME),
             &to_yaml::<T>(item)?,
             false,
         )?;
@@ -145,42 +136,42 @@ impl LocalFileStore {
     }
 
     /// Generic function for loading spec.yaml into memory
-    fn load_item<T: DeserializeOwned>(&self, item_key: &ItemKey) -> Result<T> {
+    fn load_model<T: DeserializeOwned>(&self, item_key: &ModelID) -> Result<T> {
         match item_key {
-            ItemKey::NameVer(name, version) => {
+            ModelID::NameVer(name, version) => {
                 // Search the name-ver index
                 let hash = self.get_hash_from_name_ver_tree::<T>(name, version)?;
 
                 // Get the spec and annotation yaml
-                let spec_yaml = fs::read_to_string(self.make_path::<T>(&hash, "spec.yaml"))?;
+                let spec_yaml = fs::read_to_string(self.make_path::<T>(&hash, SPEC_FILE_NAME))?;
 
                 let annotation_yaml =
                     fs::read_to_string(self.make_annotation_path::<T>(&hash, name, version))?;
 
                 from_yaml::<T>(&spec_yaml, &hash, Some(&annotation_yaml))
             }
-            ItemKey::Hash(hash) => {
+            ModelID::Hash(hash) => {
                 // Get the spec and annotation yaml
-                let spec_yaml = fs::read_to_string(self.make_path::<T>(hash, "spec.yaml"))?;
+                let spec_yaml = fs::read_to_string(self.make_path::<T>(hash, SPEC_FILE_NAME))?;
                 from_yaml::<T>(&spec_yaml, hash, None)
             }
         }
     }
 
-    fn delete_item<T>(&self, item_key: &ItemKey) -> Result<()> {
+    fn delete_model<T>(&self, item_key: &ModelID) -> Result<()> {
         let hash = match item_key {
-            ItemKey::NameVer(name, version) => {
+            ModelID::NameVer(name, version) => {
                 // Search the name-ver index
                 self.get_hash_from_name_ver_tree::<T>(name, version)?
             }
-            ItemKey::Hash(hash) => hash.to_owned(),
+            ModelID::Hash(hash) => hash.to_owned(),
         };
 
         fs::remove_dir_all(self.make_dir_path::<T>(&hash))?;
         Ok(())
     }
 
-    fn build_name_ver_tree<T>(&self) -> Result<BTreeMap<String, String>> {
+    fn build_name_ver_tree<T>(&self) -> Result<BTreeMap<NameVerTreeKey, String>> {
         // Construct the cache with glob and regex
         let type_name = get_type_name::<T>();
         let re = Regex::new(&format!(
@@ -196,21 +187,28 @@ impl LocalFileStore {
             let path_str: String = path?.to_string_lossy().to_string();
 
             let Some(cap) = re.captures(&path_str) else {
-                continue;
+                continue; // Add the no regex nomatch back
             };
 
             name_ver_tree.insert(
-                format!("{}-{}", &cap["name"].to_string(), &cap["ver"].to_string()),
+                NameVerTreeKey {
+                    name: cap["name"].to_string(),
+                    version: cap["ver"].to_string(),
+                },
                 cap["hash"].into(),
             );
         }
+
         Ok(name_ver_tree)
     }
 
     fn get_hash_from_name_ver_tree<T>(&self, name: &str, version: &str) -> Result<String> {
         Ok(self
             .build_name_ver_tree::<T>()?
-            .get(&Self::make_name_ver_tree_key(name, version))
+            .get(&NameVerTreeKey {
+                name: name.to_owned(),
+                version: version.to_owned(),
+            })
             .ok_or_else(|| {
                 OrcaError::from(Kind::NoAnnotationFound(
                     get_type_name::<T>(),
@@ -219,10 +217,6 @@ impl LocalFileStore {
                 ))
             })?
             .to_owned())
-    }
-
-    fn make_name_ver_tree_key(name: &str, version: &str) -> String {
-        format!("{name}-{version}")
     }
 
     // Help save file function

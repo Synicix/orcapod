@@ -3,7 +3,7 @@
 pub mod fixture;
 use anyhow::Result;
 use fixture::{get_test_item, store_test, ItemType};
-use orcapod::store::ItemKey;
+use orcapod::store::ModelID;
 use std::fs;
 use tempfile::tempdir;
 
@@ -12,6 +12,7 @@ fn test_pod_with_file_store() -> Result<()> {
     test_item_store_with_annotation(&ItemType::Pod)
 }
 
+#[expect(clippy::too_many_lines, reason = "This will be cut down later")]
 fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
     let store_directory = tempdir()?.path().to_string_lossy().to_string();
     {
@@ -41,7 +42,7 @@ fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
         // Test load
         let loaded_item = store.load_item(
             item_type,
-            &ItemKey::NameVer(item.get_name().into(), item.get_version().into()),
+            &ModelID::NameVer(item.get_name().into(), item.get_version().into()),
         )?;
 
         assert!(
@@ -50,7 +51,7 @@ fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
         );
 
         let loaded_item_by_hash =
-            store.load_item(item_type, &ItemKey::Hash(item.get_hash().into()))?;
+            store.load_item(item_type, &ModelID::Hash(item.get_hash().into()))?;
 
         assert!(
             loaded_item_by_hash.is_annotation_none(),
@@ -59,9 +60,19 @@ fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
 
         // Test list pod
         // Should only return a result of 1
+        let items = store.list_item(item_type)?;
+        assert!(items.len() == 1, "List item should be length of 1");
         assert!(
-            store.list_item(item_type)?["name"].len() == 1,
-            "List item should be length of 1"
+            items[0].name == item.get_name(),
+            "Item name from list_item didn't match what was saved"
+        );
+        assert!(
+            items[0].version == item.get_version(),
+            "Item version from list_item didn't match what was saved"
+        );
+        assert!(
+            items[0].hash == item.get_hash(),
+            "Item hash from list_item didn't match what was saved"
         );
 
         // Add another pod with a new version
@@ -71,7 +82,7 @@ fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
         store.save_item(&item_2)?;
 
         assert!(
-            store.list_item(item_type)?["name"].len() == 2,
+            store.list_item(item_type)?.len() == 2,
             "List item should be length of 2"
         );
 
@@ -79,18 +90,18 @@ fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
         store.delete_item_annotation(item_type, item_2.get_name(), item_2.get_version())?;
 
         assert!(
-            store.list_item(item_type)?["name"].len() == 1,
+            store.list_item(item_type)?.len() == 1,
             "List item should be length of 1"
         );
 
         // Delete the first pod
         store.delete_item(
             item_type,
-            &ItemKey::NameVer(item.get_name().into(), item.get_version().into()),
+            &ModelID::NameVer(item.get_name().into(), item.get_version().into()),
         )?;
 
         assert!(
-            store.list_item(item_type)?["name"].is_empty(),
+            store.list_item(item_type)?.is_empty(),
             "List item should be empty"
         );
 
@@ -99,17 +110,17 @@ fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
         store.save_item(&item_2)?;
 
         assert!(
-            store.list_item(item_type)?["name"].len() == 2,
+            store.list_item(item_type)?.len() == 2,
             "List item should be length of 2"
         );
 
         // Delete the entire pod which should get rid of annotation
         store.delete_item(
             item_type,
-            &ItemKey::NameVer(item.get_name().into(), item.get_version().into()),
+            &ModelID::NameVer(item.get_name().into(), item.get_version().into()),
         )?;
 
-        assert!(store.list_item(item_type)?["name"].is_empty(), "List item should be empty after deleting the object itself regardless of how many annotations there are");
+        assert!(store.list_item(item_type)?.is_empty(), "List item should be empty after deleting the object itself regardless of how many annotations there are");
 
         // Test the hash version
         // Test the case with where delete wipes out all annotation
@@ -117,14 +128,14 @@ fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
         store.save_item(&item_2)?;
 
         assert!(
-            store.list_item(item_type)?["name"].len() == 2,
+            store.list_item(item_type)?.len() == 2,
             "List item should be length of 2"
         );
 
         // Delete the entire pod which should get rid of annotation
-        store.delete_item(item_type, &ItemKey::Hash(item.get_hash().into()))?;
+        store.delete_item(item_type, &ModelID::Hash(item.get_hash().into()))?;
 
-        assert!(store.list_item(item_type)?["name"].is_empty(), "List item should be empty after deleting the object itself regardless of how many annotations there are");
+        assert!(store.list_item(item_type)?.is_empty(), "List item should be empty after deleting the object itself regardless of how many annotations there are");
 
         assert!(
             !spec_file.exists(),

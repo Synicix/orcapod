@@ -3,10 +3,8 @@
 pub mod fixture;
 use fixture::get_test_pod;
 use indoc::indoc;
-use orcapod::{
-    error::Result,
-    model::{to_yaml, Pod},
-};
+use orcapod::error::Result;
+use orcapod::model::{to_yaml, Pod};
 
 #[test]
 fn verify_hash() -> Result<()> {
