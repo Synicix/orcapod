@@ -30,7 +30,7 @@ sha2 = "0.10.8"
 glob = "0.3.1"
 regex = "1.11.0"
 colored = "2.1.0"
-anyhow = "1.0.90"
+anyhow = "1.0.91"
 
 [dev-dependencies]
 tempfile = "3.13.0"
@@ -38,7 +38,7 @@ indoc = "2.0.5"
 
 [lints.rust]
 non_ascii_idents = "deny"
-# missing_docs = "warn"     # temporary: add once we have docs
+missing_docs = "warn"
 
 [lints.clippy]
 correctness = "deny"

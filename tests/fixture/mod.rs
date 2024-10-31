@@ -1,7 +1,8 @@
-use anyhow::Result;
+use orcapod::error::Result;
+use orcapod::store::ModelInfo;
 use orcapod::{
     model::{to_yaml, Annotation, Pod, StreamInfo},
-    store::{filestore::LocalFileStore, ItemKey, Store},
+    store::{filestore::LocalFileStore, ModelID, Store},
 };
 use std::{
     collections::BTreeMap,
@@ -69,11 +70,11 @@ pub fn get_test_item(item_type: &ItemType) -> Result<Item> {
 
 pub fn get_test_pod() -> Result<Pod> {
     Pod::new(
-        Annotation {
+        Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod.".to_owned(),
             version: "0.67.0".to_owned(),
-        },
+        }),
         "https://github.com/zenml-io/zenml/tree/0.67.0".to_owned(),
         "zenmldocker/zenml-server:0.67.0".to_owned(),
         "tail -f /dev/null".to_owned(),
@@ -158,19 +159,19 @@ impl TestLocalStore {
         }
     }
 
-    pub fn load_item(&self, item_type: &ItemType, item_key: &ItemKey) -> Result<Item> {
+    pub fn load_item(&self, item_type: &ItemType, item_key: &ModelID) -> Result<Item> {
         match item_type {
             ItemType::Pod => Ok(Item::Pod(self.store.load_pod(item_key)?)),
         }
     }
 
-    pub fn list_item(&self, item_type: &ItemType) -> Result<BTreeMap<String, String>> {
+    pub fn list_item(&self, item_type: &ItemType) -> Result<Vec<ModelInfo>> {
         match item_type {
             ItemType::Pod => self.store.list_pod(),
         }
     }
 
-    pub fn delete_item(&self, item_type: &ItemType, item_key: &ItemKey) -> Result<()> {
+    pub fn delete_item(&self, item_type: &ItemType, item_key: &ModelID) -> Result<()> {
         match item_type {
             ItemType::Pod => self.store.delete_pod(item_key),
         }
@@ -183,7 +184,7 @@ impl TestLocalStore {
         version: &str,
     ) -> Result<()> {
         match item_type {
-            ItemType::Pod => self.store.delete_annotation::<Pod>(name, version),
+            ItemType::Pod => Ok(self.store.delete_annotation::<Pod>(name, version)?),
         }
     }
 }

@@ -1,9 +1,15 @@
-use crate::util::{get_type_name, hash};
-use anyhow::Result;
+use crate::{
+    error::Result,
+    util::{get_type_name, hash},
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::{collections::BTreeMap, path::PathBuf};
-
+/// Converts a model instance into a consistent yaml.
+///
+/// # Errors
+///
+/// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
 pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
     let mut yaml = serde_yaml::to_string(
@@ -16,8 +22,12 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
 
     Ok(yaml)
 }
-
-/// Deserialize struct with optional annotation
+/// Instantiates a model from from yaml content and its unique hash.
+///
+/// # Errors
+///
+/// Will return `Err` if there is an issue converting YAML files for spec+annotation into a model
+/// instance.
 pub fn from_yaml<T: DeserializeOwned>(
     spec_yaml: &str,
     hash: &str,
@@ -39,9 +49,12 @@ pub fn from_yaml<T: DeserializeOwned>(
 
 // --- core model structs ---
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+/// A reusable, containerized computational unit.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Pod {
+    /// Metadata that doesn't affect reproducibility.
     pub annotation: Option<Annotation>,
+    /// Unique id based on reproducibility.
     pub hash: String,
     source_commit_url: String,
     image: String,
@@ -55,8 +68,13 @@ pub struct Pod {
 }
 
 impl Pod {
+    /// Construct a new pod instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `Pod` instance.
     pub fn new(
-        annotation: Annotation,
+        annotation: Option<Annotation>,
         source_commit_url: String,
         image: String,
         command: String,
@@ -68,7 +86,7 @@ impl Pod {
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self> {
         let pod_no_hash = Self {
-            annotation: Some(annotation),
+            annotation,
             hash: String::new(),
             source_commit_url,
             image,
@@ -135,28 +153,40 @@ impl PodJob {
 
 // --- util types ---
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+/// Standard metadata structure for all model instances.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Annotation {
+    /// A unique name.
     pub name: String,
+    /// A unique semantic version.
     pub version: String,
+    /// A long form description.
     pub description: String,
 }
-
+/// Specification for GPU requirements in computation.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
+    /// GPU model specification.
     pub model: GPUModel,
+    /// Manufacturer recommended memory.
     pub recommended_memory: u64,
+    /// Number of GPU cards required.
     pub count: u16,
 }
-
+/// GPU model specification.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
-    NVIDIA(String), // String will be the specific model of the gpu
+    /// NVIDIA-manufactured card where `String` is the specific model e.g. ???
+    NVIDIA(String),
+    /// AMD-manufactured card where `String` is the specific model e.g. ???
     AMD(String),
 }
-
+/// Streams are named and represent an abstration for the file(s) that represent some particular
+/// data.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
+    /// Path to stream file.
     pub path: PathBuf,
+    /// Naming pattern for the stream.
     pub match_pattern: String,
 }
