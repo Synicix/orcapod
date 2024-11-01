@@ -1,6 +1,6 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{from_yaml, to_yaml, Annotation, Pod},
+    model::{from_yaml, to_yaml, Annotation, Pod, PodJob},
     util::get_type_name,
 };
 use colored::Colorize;
@@ -54,6 +54,22 @@ impl Store for LocalFileStore {
 
         fs::remove_file(self.make_annotation_path::<T>(&hash, name, version))?;
         Ok(())
+    }
+
+    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
+        self.save_model::<PodJob>(pod_job, &pod_job.hash, pod_job.annotation.as_ref())
+    }
+
+    fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob> {
+        self.load_model::<PodJob>(model_id)
+    }
+
+    fn list_pod_job(&self) -> Result<Vec<ModelInfo>> {
+        self.list_model::<PodJob>()
+    }
+
+    fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
+        self.delete_model::<PodJob>(model_id)
     }
 }
 
