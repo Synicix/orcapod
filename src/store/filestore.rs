@@ -1,6 +1,6 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{from_yaml, to_yaml, Annotation, Pod},
+    model::{from_yaml, to_yaml, Annotation, Pod, PodJob},
     util::get_type_name,
 };
 use colored::Colorize;
@@ -33,29 +33,19 @@ impl Store for LocalFileStore {
         self.save_model(pod, &pod.hash, pod.annotation.as_ref())
     }
 
-    fn load_pod(&self, item_key: &ModelID) -> Result<Pod> {
-        self.load_model::<Pod>(item_key)
+    fn load_pod(&self, model_id: &ModelID) -> Result<Pod> {
+        self.load_model::<Pod>(model_id)
     }
 
     /// Return Btree where key is column name and value is a vec of values
     /// Are we okay with returning a bunch of strings? For now it works but later on like adding version
     /// this will break...
     fn list_pod(&self) -> Result<Vec<ModelInfo>> {
-        let name_ver_tree = self.build_name_ver_tree::<Pod>()?;
-        let mut models = Vec::with_capacity(name_ver_tree.len());
-        for (key, hash) in name_ver_tree {
-            models.push(ModelInfo {
-                name: key.name,
-                version: key.version,
-                hash,
-            });
-        }
-
-        Ok(models)
+        self.list_model::<Pod>()
     }
 
-    fn delete_pod(&self, item_key: &ModelID) -> Result<()> {
-        self.delete_model::<Pod>(item_key)
+    fn delete_pod(&self, model_id: &ModelID) -> Result<()> {
+        self.delete_model::<Pod>(model_id)
     }
 
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
@@ -66,30 +56,20 @@ impl Store for LocalFileStore {
         Ok(())
     }
 
-    /// Pod job will check will confirm that the pod is valid first before saving the pod_job
-    fn save_pod_job(&self, pod_job: &crate::model::PodJob) -> Result<(), Box<dyn Error>> {
-        // Check if pod exists if not save it
-        if !self.make_spec_path::<Pod>(&pod_job.pod.hash).exists() {
-            self.save_pod(&pod_job.pod)?;
-        }
-
-        self.save_item(pod_job, &pod_job.annotation, &pod_job.hash)
+    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
+        self.save_model::<PodJob>(pod_job, &pod_job.hash, pod_job.annotation.as_ref())
     }
 
-    fn load_pod_job(
-        &self,
-        name: &str,
-        version: &str,
-    ) -> Result<crate::model::PodJob, Box<dyn Error>> {
-        self.load_item::<PodJob>(name, version)
+    fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob> {
+        self.load_model::<PodJob>(model_id)
     }
 
-    fn list_pod_job(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
-        self.list_item::<PodJob>()
+    fn list_pod_job(&self) -> Result<Vec<ModelInfo>> {
+        self.list_model::<PodJob>()
     }
 
-    fn delete_pod_job(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
-        self.delete_item::<PodJob>(name, version)
+    fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
+        self.delete_model::<PodJob>(model_id)
     }
 }
 
@@ -161,9 +141,23 @@ impl LocalFileStore {
         Ok(())
     }
 
+    fn list_model<T>(&self) -> Result<Vec<ModelInfo>> {
+        let name_ver_tree = self.build_name_ver_tree::<T>()?;
+        let mut models = Vec::with_capacity(name_ver_tree.len());
+        for (key, hash) in name_ver_tree {
+            models.push(ModelInfo {
+                name: key.name,
+                version: key.version,
+                hash,
+            });
+        }
+
+        Ok(models)
+    }
+
     /// Generic function for loading spec.yaml into memory
-    fn load_model<T: DeserializeOwned>(&self, item_key: &ModelID) -> Result<T> {
-        match item_key {
+    fn load_model<T: DeserializeOwned>(&self, model_id: &ModelID) -> Result<T> {
+        match model_id {
             ModelID::NameVer(name, version) => {
                 // Search the name-ver index
                 let hash = self.get_hash_from_name_ver_tree::<T>(name, version)?;
@@ -184,8 +178,8 @@ impl LocalFileStore {
         }
     }
 
-    fn delete_model<T>(&self, item_key: &ModelID) -> Result<()> {
-        let hash = match item_key {
+    fn delete_model<T>(&self, model_id: &ModelID) -> Result<()> {
+        let hash = match model_id {
             ModelID::NameVer(name, version) => {
                 // Search the name-ver index
                 self.get_hash_from_name_ver_tree::<T>(name, version)?

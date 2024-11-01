@@ -105,35 +105,43 @@ impl Pod {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+/// Struct to represent ``PodJob``
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PodJob {
-    pub annotation: Annotation,
+    /// Optional annotation for pod job
+    pub annotation: Option<Annotation>,
+    /// Computed by coverting it to yaml then hash
     pub hash: String,
+    /// Details about the pod from which the pod job was created from
     pub pod: Pod,
     input_volume_map: BTreeMap<PathBuf, PathBuf>,
     output_volume_map: BTreeMap<PathBuf, PathBuf>,
     cpu_limit: f32, // Num of cpu to limit the pod from
     mem_limit: u64, // Bytes to limit memory
-    retry_policy: PodRetryPolicy,
+    retry_policy: PodJobRetryPolicy,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub enum PodRetryPolicy {
+/// Pod job retry policy
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+pub enum PodJobRetryPolicy {
+    /// Will stop the job upon first failure
     NoRetry,
+    /// Will allow n number of failures within a time window of t seconds
     RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
 }
 
 impl PodJob {
+    /// Function to create a new pod job
     pub fn new(
-        annotation: Annotation,
+        annotation: Option<Annotation>,
         pod: Pod,
         input_volume_map: BTreeMap<PathBuf, PathBuf>,
         output_volume_map: BTreeMap<PathBuf, PathBuf>,
         cpu_limit: f32,
         mem_limit: u64,
-        retry_policy: PodRetryPolicy,
-    ) -> Result<Self, Box<dyn Error>> {
-        let pod_job_no_hash = PodJob {
+        retry_policy: PodJobRetryPolicy,
+    ) -> Result<Self> {
+        let pod_job_no_hash = Self {
             annotation,
             hash: String::new(),
             pod,
