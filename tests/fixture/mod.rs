@@ -26,6 +26,9 @@ pub enum ModelType {
 
 impl Model {
     #[expect(clippy::unwrap_used, reason = "test")]
+    ///
+    /// # Panics
+    /// Panic if annotation is none
     pub fn get_name(&self) -> &str {
         match self {
             Self::Pod(pod) => &pod.annotation.as_ref().unwrap().name,
@@ -41,6 +44,8 @@ impl Model {
     }
 
     #[expect(clippy::unwrap_used, reason = "test")]
+    /// # Panics
+    /// Panic if annotation is none
     pub fn get_version(&self) -> &str {
         match self {
             Self::Pod(pod) => &pod.annotation.as_ref().unwrap().version,
@@ -55,6 +60,8 @@ impl Model {
         }
     }
 
+    /// # Errors
+    /// Errors if ``to_yaml`` fails
     pub fn to_yaml(&self) -> Result<String> {
         match self {
             Self::Pod(pod) => to_yaml(pod),
@@ -63,6 +70,9 @@ impl Model {
     }
 
     #[expect(clippy::unwrap_used, reason = "test")]
+    ///
+    /// # Panics
+    /// panics if annotation is none
     pub fn set_name(&mut self, name: &str) {
         match self {
             Self::Pod(pod) => name.clone_into(&mut pod.annotation.as_mut().unwrap().name),
@@ -73,6 +83,9 @@ impl Model {
     }
 }
 
+///
+/// # Errors
+/// Forward get fuction errors
 pub fn get_test_item(item_type: &ModelType) -> Result<Model> {
     match item_type {
         ModelType::Pod => Ok(Model::Pod(get_test_pod()?)),
@@ -80,6 +93,8 @@ pub fn get_test_item(item_type: &ModelType) -> Result<Model> {
     }
 }
 
+/// # Errors
+/// Forwards ``pod::new()`` errors
 pub fn get_test_pod() -> Result<Pod> {
     Pod::new(
         Some(Annotation {
@@ -120,6 +135,8 @@ pub fn get_test_pod() -> Result<Pod> {
     )
 }
 
+/// # Errors
+/// Forward ``pod_job::new()`` errors
 pub fn get_test_pod_job() -> Result<PodJob> {
     let mut input_volume_map = BTreeMap::new();
     input_volume_map.insert(PathBuf::from("style"), PathBuf::from("style.png"));
@@ -194,6 +211,8 @@ impl TestLocalStore {
         }
     }
 
+    /// # Errors
+    /// Forward save model errors
     pub fn save_model(&self, model: &Model) -> Result<()> {
         match model {
             Model::Pod(pod) => self.store.save_pod(pod),
@@ -201,6 +220,8 @@ impl TestLocalStore {
         }
     }
 
+    /// # Errors
+    /// Forward load model errors
     pub fn load_model(&self, model_type: &ModelType, item_key: &ModelID) -> Result<Model> {
         match model_type {
             ModelType::Pod => Ok(Model::Pod(self.store.load_pod(item_key)?)),
@@ -208,6 +229,8 @@ impl TestLocalStore {
         }
     }
 
+    /// # Errors
+    /// Forward list model errors
     pub fn list_model(&self, model_type: &ModelType) -> Result<Vec<ModelInfo>> {
         match model_type {
             ModelType::Pod => self.store.list_pod(),
@@ -215,14 +238,18 @@ impl TestLocalStore {
         }
     }
 
-    pub fn delete_item(&self, model_type: &ModelType, item_key: &ModelID) -> Result<()> {
+    /// # Errors
+    /// Forward delete model errors
+    pub fn delete_model(&self, model_type: &ModelType, item_key: &ModelID) -> Result<()> {
         match model_type {
             ModelType::Pod => self.store.delete_pod(item_key),
             ModelType::PodJob => self.store.delete_pod_job(item_key),
         }
     }
 
-    pub fn delete_item_annotation(
+    /// # Errors
+    /// Forward delete item annotation errors
+    pub fn delete_model_annotation(
         &mut self,
         item_type: &ModelType,
         name: &str,
@@ -235,6 +262,8 @@ impl TestLocalStore {
     }
 }
 
+/// # Errors
+/// Will error if creating new store fails
 pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
     let tmp_directory = tempdir()?.path().to_owned();
     let store =

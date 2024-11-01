@@ -132,6 +132,9 @@ pub enum PodJobRetryPolicy {
 
 impl PodJob {
     /// Function to create a new pod job
+    ///
+    /// # Errors
+    /// Will error out if fail to cover to yaml and hash
     pub fn new(
         annotation: Option<Annotation>,
         pod: Pod,

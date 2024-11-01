@@ -88,7 +88,7 @@ fn test_item_store_with_annotation(item_type: &ModelType) -> Result<()> {
         );
 
         // Test delete
-        store.delete_item_annotation(item_type, item_2.get_name(), item_2.get_version())?;
+        store.delete_model_annotation(item_type, item_2.get_name(), item_2.get_version())?;
 
         assert!(
             store.list_model(item_type)?.len() == 1,
@@ -96,7 +96,7 @@ fn test_item_store_with_annotation(item_type: &ModelType) -> Result<()> {
         );
 
         // Delete the first pod
-        store.delete_item(
+        store.delete_model(
             item_type,
             &ModelID::NameVer(item.get_name().into(), item.get_version().into()),
         )?;
@@ -116,7 +116,7 @@ fn test_item_store_with_annotation(item_type: &ModelType) -> Result<()> {
         );
 
         // Delete the entire pod which should get rid of annotation
-        store.delete_item(
+        store.delete_model(
             item_type,
             &ModelID::NameVer(item.get_name().into(), item.get_version().into()),
         )?;
@@ -134,7 +134,7 @@ fn test_item_store_with_annotation(item_type: &ModelType) -> Result<()> {
         );
 
         // Delete the entire pod which should get rid of annotation
-        store.delete_item(item_type, &ModelID::Hash(item.get_hash().into()))?;
+        store.delete_model(item_type, &ModelID::Hash(item.get_hash().into()))?;
 
         assert!(store.list_model(item_type)?.is_empty(), "List item should be empty after deleting the object itself regardless of how many annotations there are");
 

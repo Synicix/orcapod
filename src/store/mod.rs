@@ -51,15 +51,27 @@ pub trait Store {
     fn delete_pod(&self, model_id: &ModelID) -> Result<()>;
 
     /// Save ``pod_job`` to storage
+    ///
+    /// # Errors
+    /// Return error if failed to save pod for some reason, either encoding or ioerror
     fn save_pod_job(&self, pod_job: &PodJob) -> Result<()>;
 
     /// Load ``pod_job`` from storage given an ``model_id``
+    ///
+    /// # Errors
+    /// Will return error if fail to load pod
     fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob>;
 
     /// List all ``pod_job``
+    ///
+    /// # Errors
+    /// Will return error if fail to get all pods annotations
     fn list_pod_job(&self) -> Result<Vec<ModelInfo>>;
 
     /// Delete job by ``model_id``
+    ///
+    /// # Errors
+    /// Will return error if failed to delete the pod
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
 
     /// How to delete only annotation, which will leave the item untouched
