@@ -1,3 +1,4 @@
+use anyhow;
 use colored::Colorize;
 use glob;
 use regex;
@@ -8,10 +9,10 @@ use std::{
     fmt::{Display, Formatter},
     io,
     path::PathBuf,
-    result,
 };
 /// Shorthand for a Result that returns an `OrcaError`.
-pub(crate) type Result<T> = result::Result<T, OrcaError>;
+pub type Result<T> = anyhow::Result<T, OrcaError>;
+// pub type Result<T> = result::Result<T, OrcaError>;
 
 /// Possible errors you may encounter.
 #[derive(Debug)]
@@ -22,8 +23,6 @@ pub(crate) enum Kind {
     FileHasNoParent(PathBuf),
     /// Returned if an annotation was expected to exist.
     NoAnnotationFound(String, String, String),
-    /// Returned if a regular expression was expected to match.
-    NoRegexMatch,
     /// Wrapper around `glob::GlobError`
     GlobError(glob::GlobError),
     /// Wrapper around `glob::PatternError`
@@ -59,9 +58,6 @@ impl Display for OrcaError {
             }
             Kind::NoAnnotationFound(class, name, version) => {
                 write!(f, "No annotation found for `{name}:{version}` {class}.")
-            }
-            Kind::NoRegexMatch => {
-                write!(f, "No match for regex.")
             }
             Kind::GlobError(error) => write!(f, "{error}"),
             Kind::GlobPaternError(error) => write!(f, "{error}"),

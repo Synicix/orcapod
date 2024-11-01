@@ -4,13 +4,7 @@ use crate::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
-use std::{
-    collections::BTreeMap,
-    fs,
-    io::{BufRead, BufReader},
-    path::{Path, PathBuf},
-    result,
-};
+use std::{collections::BTreeMap, path::PathBuf};
 /// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
@@ -35,32 +29,31 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
 /// Will return `Err` if there is an issue converting YAML files for spec+annotation into a model
 /// instance.
 pub fn from_yaml<T: DeserializeOwned>(
-    annotation_file: &Path,
-    spec_file: &Path,
+    spec_yaml: &str,
     hash: &str,
+    annotation_yaml: Option<&str>,
 ) -> Result<T> {
-    let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(annotation_file)?)?;
-    let spec_yaml = BufReader::new(fs::File::open(spec_file)?)
-        .lines()
-        .skip(1)
-        .collect::<result::Result<Vec<_>, _>>()?
-        .join("\n");
+    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
 
-    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&spec_yaml)?;
-    spec_mapping.insert("annotation".to_owned(), Value::from(annotation));
+    // Insert annotation if there is something
+    if let Some(yaml) = annotation_yaml {
+        let annotation_map: Mapping = serde_yaml::from_str(yaml)?;
+        spec_mapping.insert("annotation".into(), Value::from(annotation_map));
+    }
     spec_mapping.insert("hash".to_owned(), Value::from(hash));
 
-    let instance: T = serde_yaml::from_str(&serde_yaml::to_string(&spec_mapping)?)?;
-    Ok(instance)
+    Ok(serde_yaml::from_str(&serde_yaml::to_string(
+        &spec_mapping,
+    )?)?)
 }
 
 // --- core model structs ---
 
 /// A reusable, containerized computational unit.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
-    pub annotation: Annotation,
+    pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
     pub hash: String,
     source_commit_url: String,
@@ -81,7 +74,7 @@ impl Pod {
     ///
     /// Will return `Err` if there is an issue initializing a `Pod` instance.
     pub fn new(
-        annotation: Annotation,
+        annotation: Option<Annotation>,
         source_commit_url: String,
         image: String,
         command: String,
@@ -106,7 +99,7 @@ impl Pod {
             required_gpu,
         };
         Ok(Self {
-            hash: hash(&to_yaml::<Self>(&pod_no_hash)?),
+            hash: hash(&to_yaml(&pod_no_hash)?),
             ..pod_no_hash
         })
     }
@@ -115,7 +108,7 @@ impl Pod {
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Annotation {
     /// A unique name.
     pub name: String,
@@ -125,7 +118,7 @@ pub struct Annotation {
     pub description: String,
 }
 /// Specification for GPU requirements in computation.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
     /// GPU model specification.
     pub model: GPUModel,
@@ -135,7 +128,7 @@ pub struct GPURequirement {
     pub count: u16,
 }
 /// GPU model specification.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
     /// NVIDIA-manufactured card where `String` is the specific model e.g. ???
     NVIDIA(String),
@@ -144,7 +137,7 @@ pub enum GPUModel {
 }
 /// Streams are named and represent an abstration for the file(s) that represent some particular
 /// data.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
     /// Path to stream file.
     pub path: PathBuf,

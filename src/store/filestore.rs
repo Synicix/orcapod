@@ -1,207 +1,254 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{from_yaml, to_yaml, Pod},
-    store::Store,
+    model::{from_yaml, to_yaml, Annotation, Pod},
+    util::get_type_name,
 };
 use colored::Colorize;
 use regex::Regex;
+use serde::{de::DeserializeOwned, Serialize};
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
-/// Support for a storage backend on a local filesystem directory.
+
+use super::{ModelID, ModelInfo, Store};
+
+const SPEC_FILE_NAME: &str = "spec.yaml";
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct NameVerTreeKey {
+    name: String,
+    version: String,
+}
+
+/// Local storage system for orca items implmenting store
 #[derive(Debug)]
 pub struct LocalFileStore {
-    /// A local path to a directory where store will be located.
-    pub directory: PathBuf,
+    directory: PathBuf,
 }
 
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<()> {
-        let class = "pod";
-        // Save the annotation file and throw and error if exist
-        Self::save_file(
-            &self.make_annotation_path(
-                class,
-                &pod.hash,
-                &pod.annotation.name,
-                &pod.annotation.version,
-            ),
-            &serde_yaml::to_string(&pod.annotation)?,
-            true,
-        )?;
-        // Save the pod and skip if it already exist, for the case of many annotation to a single pod
-        Self::save_file(
-            &self.make_spec_path(class, &pod.hash),
-            &to_yaml::<Pod>(pod)?,
-            false,
-        )?;
-
-        Ok(())
+        self.save_model(pod, &pod.hash, pod.annotation.as_ref())
     }
 
-    fn load_pod(&self, name: &str, version: &str) -> Result<Pod> {
-        let class = "pod".to_owned();
-
-        let (_, (hash, _)) =
-            Self::parse_annotation_path(&self.make_annotation_path("pod", "*", name, version))?
-                .next()
-                .ok_or_else(|| {
-                    OrcaError::from(Kind::NoAnnotationFound(
-                        class,
-                        name.to_owned(),
-                        version.to_owned(),
-                    ))
-                })??;
-
-        from_yaml::<Pod>(
-            &self.make_annotation_path("pod", &hash, name, version),
-            &self.make_spec_path("pod", &hash),
-            &hash,
-        )
+    fn load_pod(&self, model_id: &ModelID) -> Result<Pod> {
+        self.load_model::<Pod>(model_id)
     }
 
-    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>> {
-        let (names, (hashes, versions)) =
-            Self::parse_annotation_path(&self.make_annotation_path("pod", "*", "*", "*"))?
-                .collect::<Result<(Vec<_>, (Vec<_>, Vec<_>))>>()?;
-
-        Ok(BTreeMap::from([
-            (String::from("name"), names),
-            (String::from("hash"), hashes),
-            (String::from("version"), versions),
-        ]))
+    /// Return Btree where key is column name and value is a vec of values
+    /// Are we okay with returning a bunch of strings? For now it works but later on like adding version
+    /// this will break...
+    fn list_pod(&self) -> Result<Vec<ModelInfo>> {
+        self.list_model::<Pod>()
     }
 
-    fn delete_pod(&self, name: &str, version: &str) -> Result<()> {
-        // assumes propagate = false
-        let class = "pod".to_owned();
-        let versions = self.get_pod_version_map(name)?;
-        let hash = versions.get(version).ok_or_else(|| {
-            OrcaError::from(Kind::NoAnnotationFound(
-                class,
-                name.to_owned(),
-                version.to_owned(),
-            ))
-        })?;
+    fn delete_pod(&self, model_id: &ModelID) -> Result<()> {
+        self.delete_model::<Pod>(model_id)
+    }
 
-        let annotation_file = self.make_annotation_path("pod", hash, name, version);
-        let annotation_dir = annotation_file
-            .parent()
-            .ok_or_else(|| OrcaError::from(Kind::FileHasNoParent(annotation_file.clone())))?;
-        let spec_file = self.make_spec_path("pod", hash);
-        let spec_dir = spec_file
-            .parent()
-            .ok_or_else(|| OrcaError::from(Kind::FileHasNoParent(spec_file.clone())))?;
+    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
+        // Search the name ver index for the hash
+        let hash = self.get_hash_from_name_ver_tree::<T>(name, version)?;
 
-        fs::remove_file(&annotation_file)?;
-        if !versions
-            .iter()
-            .any(|(list_version, list_hash)| list_version != version && list_hash == hash)
-        {
-            fs::remove_dir_all(spec_dir)?;
-        }
-        if !versions
-            .iter()
-            .any(|(list_version, _)| list_version != version)
-        {
-            fs::remove_dir_all(annotation_dir)?;
-        }
-
+        fs::remove_file(self.make_annotation_path::<T>(&hash, name, version))?;
         Ok(())
     }
 }
 
 impl LocalFileStore {
-    /// Construct a local file store instance.
-    pub fn new(directory: impl Into<PathBuf>) -> Self {
+    /// New function that takes the directory as where to save the files
+    pub fn new(directory: impl AsRef<Path>) -> Self {
         Self {
-            directory: directory.into(),
+            directory: directory.as_ref().into(),
         }
     }
-    /// Path where annotation file is located.
-    pub fn make_annotation_path(
+
+    /// Getter function for directory
+    pub fn get_directory(&self) -> &Path {
+        &self.directory
+    }
+
+    fn make_dir_path<T>(&self, hash: &str) -> PathBuf {
+        PathBuf::from(format!(
+            "{}/{}/{}",
+            self.directory.to_string_lossy(),
+            get_type_name::<T>(),
+            hash,
+        ))
+    }
+
+    /// Helper function for making path to a given item type T
+    pub fn make_path<T>(&self, hash: &str, file_name: &str) -> PathBuf {
+        self.make_dir_path::<T>(hash).join(file_name)
+    }
+
+    /// Helper function to create the path to the annotations files
+    pub fn make_annotation_path<T>(&self, hash: &str, name: &str, version: &str) -> PathBuf {
+        self.make_dir_path::<T>(hash)
+            .join("annotations")
+            .join(format!("{name}-{version}.yaml"))
+    }
+
+    // Generic function for save load list delete
+    /// Generic func to save all sorts of item
+    ///
+    /// Example usage inside `LocalFileStore`
+    /// ``` markdown
+    /// let pod = Pod::new(); // For example doesn't actually work
+    /// self.save_item(pod, &pod.annotation, &pod.hash).unwrap()
+    /// ```
+    fn save_model<T: Serialize>(
         &self,
-        class: &str,
+        item: &T,
         hash: &str,
-        name: &str,
-        version: &str,
-    ) -> PathBuf {
-        PathBuf::from(format!(
-            "{}/{}/{}/{}/{}-{}.yaml",
-            self.directory.to_string_lossy(),
-            "annotation",
-            class,
-            name,
-            hash,
-            version,
-        ))
-    }
-    /// Path where specification file is located.
-    pub fn make_spec_path(&self, class: &str, hash: &str) -> PathBuf {
-        PathBuf::from(format!(
-            "{}/{}/{}/{}",
-            self.directory.to_string_lossy(),
-            class,
-            hash,
-            "spec.yaml",
-        ))
-    }
+        annotation: Option<&Annotation>,
+    ) -> Result<()> {
+        // Save the item first
+        Self::save_file(
+            self.make_path::<T>(hash, SPEC_FILE_NAME),
+            &to_yaml::<T>(item)?,
+            false,
+        )?;
 
-    fn parse_annotation_path(
-        path: &Path,
-    ) -> Result<impl Iterator<Item = Result<(String, (String, String))>>> {
-        let paths = glob::glob(&path.to_string_lossy())?.map(|filepath| {
-            let re = Regex::new(
-                r"(?x)
-                ^.*
-                \/(?<name>[0-9a-zA-Z\-]+)
-                \/
-                    (?<hash>[0-9A-F]+)
-                    -
-                    (?<version>[0-9]+\.[0-9]+\.[0-9]+)
-                    \.yaml
-                $",
+        // Save the annotation file and throw and error if exist
+        if let Some(value) = annotation {
+            // Annotation exist, thus save it
+            Self::save_file(
+                self.make_annotation_path::<T>(hash, &value.name, &value.version),
+                &serde_yaml::to_string(value)?,
+                true,
             )?;
-            let filepath_string = String::from(filepath?.to_string_lossy());
-            let group = re
-                .captures(&filepath_string)
-                .ok_or_else(|| OrcaError::from(Kind::NoRegexMatch))?;
-            Ok((
-                group["name"].to_string(),
-                (group["hash"].to_string(), group["version"].to_string()),
-            ))
-        });
-        Ok(paths)
-    }
-
-    fn get_pod_version_map(&self, name: &str) -> Result<BTreeMap<String, String>> {
-        Self::parse_annotation_path(&self.make_annotation_path("pod", "*", name, "*"))?
-            .map(|metadata| -> Result<(String, String)> {
-                let resolved_metadata = metadata?;
-                let hash = resolved_metadata.1 .0;
-                let version = resolved_metadata.1 .1;
-                Ok((version, hash))
-            })
-            .collect::<Result<BTreeMap<String, String>>>()
-    }
-
-    fn save_file(file: &Path, content: &str, fail_if_exists: bool) -> Result<()> {
-        if let Some(parent) = file.parent() {
-            fs::create_dir_all(parent)?;
         }
-        let file_exists = file.exists();
-        if file_exists && fail_if_exists {
-            return Err(OrcaError::from(Kind::FileExists(file.to_path_buf())));
-        } else if file_exists {
+
+        Ok(())
+    }
+
+    fn list_model<T>(&self) -> Result<Vec<ModelInfo>> {
+        let name_ver_tree = self.build_name_ver_tree::<T>()?;
+        let mut models = Vec::with_capacity(name_ver_tree.len());
+        for (key, hash) in name_ver_tree {
+            models.push(ModelInfo {
+                name: key.name,
+                version: key.version,
+                hash,
+            });
+        }
+
+        Ok(models)
+    }
+
+    /// Generic function for loading spec.yaml into memory
+    fn load_model<T: DeserializeOwned>(&self, model_id: &ModelID) -> Result<T> {
+        match model_id {
+            ModelID::NameVer(name, version) => {
+                // Search the name-ver index
+                let hash = self.get_hash_from_name_ver_tree::<T>(name, version)?;
+
+                // Get the spec and annotation yaml
+                let spec_yaml = fs::read_to_string(self.make_path::<T>(&hash, SPEC_FILE_NAME))?;
+
+                let annotation_yaml =
+                    fs::read_to_string(self.make_annotation_path::<T>(&hash, name, version))?;
+
+                from_yaml::<T>(&spec_yaml, &hash, Some(&annotation_yaml))
+            }
+            ModelID::Hash(hash) => {
+                // Get the spec and annotation yaml
+                let spec_yaml = fs::read_to_string(self.make_path::<T>(hash, SPEC_FILE_NAME))?;
+                from_yaml::<T>(&spec_yaml, hash, None)
+            }
+        }
+    }
+
+    fn delete_model<T>(&self, model_id: &ModelID) -> Result<()> {
+        let hash = match model_id {
+            ModelID::NameVer(name, version) => {
+                // Search the name-ver index
+                self.get_hash_from_name_ver_tree::<T>(name, version)?
+            }
+            ModelID::Hash(hash) => hash.to_owned(),
+        };
+
+        fs::remove_dir_all(self.make_dir_path::<T>(&hash))?;
+        Ok(())
+    }
+
+    fn build_name_ver_tree<T>(&self) -> Result<BTreeMap<NameVerTreeKey, String>> {
+        // Construct the cache with glob and regex
+        let type_name = get_type_name::<T>();
+        let re = Regex::new(&format!(
+            r"^.*\/{type_name}\/(?<hash>[a-z0-9]+)\/annotations\/(?<name>[A-z0-9\- ]+)-(?<ver>[0-9]+.[0-9]+.[0-9]+).yaml$"
+        ))?;
+
+        // Create tree where name_ver is key and value is hash
+        let mut name_ver_tree = BTreeMap::new();
+
+        let search_pattern = self.make_dir_path::<T>("*").join("annotations/*");
+
+        for path in glob::glob(&search_pattern.to_string_lossy())? {
+            let path_str: String = path?.to_string_lossy().to_string();
+
+            let Some(cap) = re.captures(&path_str) else {
+                continue; // Add the no regex nomatch back
+            };
+
+            name_ver_tree.insert(
+                NameVerTreeKey {
+                    name: cap["name"].to_string(),
+                    version: cap["ver"].to_string(),
+                },
+                cap["hash"].into(),
+            );
+        }
+
+        Ok(name_ver_tree)
+    }
+
+    fn get_hash_from_name_ver_tree<T>(&self, name: &str, version: &str) -> Result<String> {
+        Ok(self
+            .build_name_ver_tree::<T>()?
+            .get(&NameVerTreeKey {
+                name: name.to_owned(),
+                version: version.to_owned(),
+            })
+            .ok_or_else(|| {
+                OrcaError::from(Kind::NoAnnotationFound(
+                    get_type_name::<T>(),
+                    name.into(),
+                    version.into(),
+                ))
+            })?
+            .to_owned())
+    }
+
+    // Help save file function
+    fn save_file(
+        path: impl AsRef<Path>,
+        content: impl AsRef<[u8]>,
+        fail_if_exists: bool,
+    ) -> Result<()> {
+        fs::create_dir_all(
+            path.as_ref().parent().ok_or_else(|| {
+                OrcaError::from(Kind::FileHasNoParent(path.as_ref().to_path_buf()))
+            })?,
+        )?;
+        if path.as_ref().exists() {
+            if fail_if_exists {
+                return Err(OrcaError::from(Kind::FileExists(
+                    path.as_ref().to_path_buf(),
+                )));
+            }
+
             println!(
                 "Skip saving `{}` since it is already stored.",
-                file.to_string_lossy().bright_cyan(),
+                path.as_ref().to_string_lossy().bright_cyan(),
             );
-        } else {
-            fs::write(file, content)?;
+            return Ok(());
         }
+
+        fs::write(path.as_ref(), content.as_ref())?;
         Ok(())
     }
 }

@@ -1,15 +1,16 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{pod_style, Result};
+use fixture::get_test_pod;
 use indoc::indoc;
+use orcapod::error::Result;
 use orcapod::model::{to_yaml, Pod};
 
 #[test]
 fn verify_hash() -> Result<()> {
     assert_eq!(
-        pod_style()?.hash,
-        "13D69656D396C272588DD875B2802FAEE1A56BD985E3C43C7DB276A373BC9DDB"
+        get_test_pod()?.hash,
+        "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb"
     );
     Ok(())
 }
@@ -17,7 +18,7 @@ fn verify_hash() -> Result<()> {
 #[test]
 fn verify_pod_to_yaml() -> Result<()> {
     assert_eq!(
-        to_yaml::<Pod>(&pod_style()?)?,
+        to_yaml::<Pod>(&get_test_pod()?)?,
         indoc! {"
             class: pod
             command: tail -f /dev/null
