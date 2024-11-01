@@ -9,8 +9,7 @@ use tempfile::tempdir;
 
 #[test]
 fn test_pod_with_file_store() -> Result<()> {
-    test_item_store_with_annotation(&ModelType::Pod)?;
-    test_item_store_with_annotation(&ModelType::PodJob)
+    test_item_store_with_annotation(&ModelType::Pod)
 }
 
 #[expect(clippy::too_many_lines, reason = "This will be cut down later")]

@@ -1,7 +1,4 @@
-use crate::{
-    error::Result,
-    model::{Pod, PodJob},
-};
+use crate::{error::Result, model::Pod};
 
 /// Enum for identification to
 pub enum ModelID {
@@ -49,18 +46,6 @@ pub trait Store {
     /// Will return `Err` if there is an issue deleting a pod from the store using `name` and
     /// `version`.
     fn delete_pod(&self, model_id: &ModelID) -> Result<()>;
-
-    /// Save ``pod_job`` to storage
-    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()>;
-
-    /// Load ``pod_job`` from storage given an ``model_id``
-    fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob>;
-
-    /// List all ``pod_job``
-    fn list_pod_job(&self) -> Result<Vec<ModelInfo>>;
-
-    /// Delete job by ``model_id``
-    fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
 
     /// How to delete only annotation, which will leave the item untouched
     ///
