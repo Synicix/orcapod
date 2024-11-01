@@ -29,31 +29,25 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
 /// Will return `Err` if there is an issue converting YAML files for spec+annotation into a model
 /// instance.
 pub fn from_yaml<T: DeserializeOwned>(
-    spec_yaml: &str,
     hash: &str,
+    spec_yaml: &str,
     annotation_yaml: Option<&str>,
 ) -> Result<T> {
-    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
-
-    // Insert annotation if there is something
-    if let Some(yaml) = annotation_yaml {
-        let annotation_map: Mapping = serde_yaml::from_str(yaml)?;
-        spec_mapping.insert("annotation".into(), Value::from(annotation_map));
+    let mut spec: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
+    spec.insert("hash".to_owned(), Value::from(hash));
+    if let Some(resolved_annotation_yaml) = annotation_yaml {
+        let annotation: Mapping = serde_yaml::from_str(resolved_annotation_yaml)?;
+        spec.insert("annotation".to_owned(), Value::from(annotation));
     }
-    spec_mapping.insert("hash".to_owned(), Value::from(hash));
 
-    Ok(serde_yaml::from_str(&serde_yaml::to_string(
-        &spec_mapping,
-    )?)?)
+    Ok(serde_yaml::from_str(&serde_yaml::to_string(&spec)?)?)
 }
 
 // --- core model structs ---
 
 /// A reusable, containerized computational unit.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Pod {
-    /// Metadata that doesn't affect reproducibility.
-    pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
     pub hash: String,
     source_commit_url: String,
@@ -64,6 +58,8 @@ pub struct Pod {
     output_stream_map: BTreeMap<String, StreamInfo>,
     recommended_cpus: f32,
     recommended_memory: u64,
+    /// Metadata that doesn't affect reproducibility.
+    pub annotation: Option<Annotation>,
     required_gpu: Option<GPURequirement>,
 }
 
@@ -74,7 +70,6 @@ impl Pod {
     ///
     /// Will return `Err` if there is an issue initializing a `Pod` instance.
     pub fn new(
-        annotation: Option<Annotation>,
         source_commit_url: String,
         image: String,
         command: String,
@@ -83,10 +78,10 @@ impl Pod {
         output_stream_map: BTreeMap<String, StreamInfo>,
         recommended_cpus: f32,
         recommended_memory: u64,
+        annotation: Option<Annotation>,
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self> {
         let pod_no_hash = Self {
-            annotation,
             hash: String::new(),
             source_commit_url,
             image,
@@ -96,6 +91,7 @@ impl Pod {
             output_stream_map,
             recommended_cpus,
             recommended_memory,
+            annotation,
             required_gpu,
         };
         Ok(Self {
@@ -108,7 +104,7 @@ impl Pod {
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Annotation {
     /// A unique name.
     pub name: String,
@@ -135,7 +131,7 @@ pub enum GPUModel {
     /// AMD-manufactured card where `String` is the specific model e.g. ???
     AMD(String),
 }
-/// Streams are named and represent an abstration for the file(s) that represent some particular
+/// Streams are named and represent an abstraction for the file(s) that represent some particular
 /// data.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {

@@ -1,21 +1,18 @@
 use crate::{error::Result, model::Pod};
+use std::collections::BTreeMap;
 
-/// Enum for identification to
+/// Options for identifying a model.
 pub enum ModelID {
-    /// Identification via name and version
-    NameVer(String, String),
-    /// Identification by hash
+    /// Identifying by the hash value of a model as a string.
     Hash(String),
+    /// Identifying by the `(name, version)` of an annotation for a model as strings.
+    Annotation(String, String),
 }
 
-/// Struct for list functios
-pub struct ModelInfo {
-    /// Name from annotation of the model struct
-    pub name: String,
-    /// Version from annotation from model struct
-    pub version: String,
-    /// Hash of the model struct
-    pub hash: String,
+pub(crate) struct ModelInfo {
+    name: String,
+    version: String,
+    hash: String,
 }
 
 /// Standard behavior of any store backend supported.
@@ -38,19 +35,20 @@ pub trait Store {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue querying metadata from existing pods in the store.
-    fn list_pod(&self) -> Result<Vec<ModelInfo>>;
-    /// How to delete a stored pod (does not propagate).
+    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>>;
+    /// How to explicitly delete a stored pod and all associated annotations (does not propagate).
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue deleting a pod from the store using `name` and
     /// `version`.
     fn delete_pod(&self, model_id: &ModelID) -> Result<()>;
-
-    /// How to delete only annotation, which will leave the item untouched
+    /// How to explicitly delete an annotation.
     ///
     /// # Errors
-    /// Will return `Err` if there is an issue of finding the annotation and deleting it
+    ///
+    /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
+    /// and `version`.
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
 }
 /// Store implementation on a local filesystem.
