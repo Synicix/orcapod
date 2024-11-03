@@ -2,7 +2,7 @@
 #![expect(clippy::expect_used, reason = "Expect OK in tests.")]
 
 pub mod fixture;
-use fixture::{add_pod_storage, pod_style, store_test};
+use fixture::{add_storage, pod_style, store_test};
 use orcapod::{
     error::Result,
     model::{to_yaml, Pod},
@@ -38,7 +38,7 @@ fn verify_pod_save_and_delete() -> Result<()> {
         );
         let spec_file = store.make_path::<Pod>(&pod_style.hash, LocalFileStore::SPEC_RELPATH);
         {
-            let pod = add_pod_storage(pod_style, &store)?;
+            let pod = add_storage(pod_style, &store)?;
             assert!(spec_file.exists());
             assert_eq!(fs::read_to_string(&spec_file)?, to_yaml::<Pod>(&pod)?);
             assert!(annotation_file.exists());
@@ -55,7 +55,7 @@ fn verify_pod_save_and_delete() -> Result<()> {
 #[test]
 fn verify_pod_load() -> Result<()> {
     let store = store_test(None)?;
-    let stored_pod = add_pod_storage(pod_style()?, &store)?;
+    let stored_pod = add_storage(pod_style()?, &store)?;
     let annotation = stored_pod
         .annotation
         .as_ref()
@@ -64,7 +64,7 @@ fn verify_pod_load() -> Result<()> {
         annotation.name.clone(),
         annotation.version.clone(),
     ))?;
-    assert_eq!(loaded_pod, stored_pod.pod);
+    assert_eq!(loaded_pod, stored_pod.model);
     Ok(())
 }
 

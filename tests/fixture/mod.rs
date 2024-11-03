@@ -12,6 +12,8 @@ use orcapod::{
 use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf};
 use tempfile::tempdir;
 
+// --- fixtures ---
+
 pub fn pod_style() -> Result<Pod> {
     Pod::new(
         "https://github.com/zenml-io/zenml/tree/0.67.0".to_owned(),
@@ -52,11 +54,6 @@ pub fn pod_style() -> Result<Pod> {
     )
 }
 
-#[derive(Debug)]
-pub struct TestLocalStore {
-    store: LocalFileStore,
-}
-
 pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
     impl Deref for TestLocalStore {
         type Target = LocalFileStore;
@@ -76,27 +73,53 @@ pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
     Ok(TestLocalStore { store })
 }
 
-#[derive(Debug)]
-pub struct TestLocallyStoredPod<'base> {
-    pub store: &'base TestLocalStore,
-    pub pod: Pod,
+// --- helper functions ---
+
+pub fn add_storage<T: TestSetup>(
+    model: T,
+    store: &TestLocalStore,
+) -> Result<TestLocallyStoredModel<T>> {
+    impl<'base, T: TestSetup> Deref for TestLocallyStoredModel<'base, T> {
+        type Target = T;
+        fn deref(&self) -> &Self::Target {
+            &self.model
+        }
+    }
+    impl<'base, T: TestSetup> Drop for TestLocallyStoredModel<'base, T> {
+        fn drop(&mut self) {
+            self.model
+                .delete(self.store)
+                .expect("Failed to teardown model.");
+        }
+    }
+    model.save(store)?;
+    let model_with_storage = TestLocallyStoredModel { store, model };
+    Ok(model_with_storage)
 }
 
-pub fn add_pod_storage(pod: Pod, store: &TestLocalStore) -> Result<TestLocallyStoredPod> {
-    impl<'base> Deref for TestLocallyStoredPod<'base> {
-        type Target = Pod;
-        fn deref(&self) -> &Self::Target {
-            &self.pod
-        }
+// --- util ---
+
+#[derive(Debug)]
+pub struct TestLocalStore {
+    store: LocalFileStore,
+}
+
+#[derive(Debug)]
+pub struct TestLocallyStoredModel<'base, T: TestSetup> {
+    pub store: &'base TestLocalStore,
+    pub model: T,
+}
+
+pub trait TestSetup {
+    fn save(&self, store: &LocalFileStore) -> Result<()>;
+    fn delete(&self, store: &LocalFileStore) -> Result<()>;
+}
+
+impl TestSetup for Pod {
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
+        store.save_pod(self)
     }
-    impl<'base> Drop for TestLocallyStoredPod<'base> {
-        fn drop(&mut self) {
-            self.store
-                .delete_pod(&ModelID::Hash(self.pod.hash.clone()))
-                .expect("Failed to teardown pod.");
-        }
+    fn delete(&self, store: &LocalFileStore) -> Result<()> {
+        store.delete_pod(&ModelID::Hash(self.hash.clone()))
     }
-    let pod_with_storage = TestLocallyStoredPod { store, pod };
-    pod_with_storage.store.save_pod(&pod_with_storage)?;
-    Ok(pod_with_storage)
 }
