@@ -80,12 +80,6 @@ pub fn store_test(store_directory: Option<&str>) -> Result<TestStore> {
 // --- helper functions ---
 
 pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
-    impl<'base, T: TestSetup> Deref for TestStoredModel<'base, T> {
-        type Target = T;
-        fn deref(&self) -> &Self::Target {
-            &self.model
-        }
-    }
     impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
         fn drop(&mut self) {
             self.model

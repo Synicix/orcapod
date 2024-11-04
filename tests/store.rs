@@ -6,7 +6,7 @@ use fixture::{add_storage, pod_style, store_test, TestSetup};
 use orcapod::{
     error::Result,
     model::Pod,
-    store::{filestore::LocalFileStore, Store},
+    store::{filestore::LocalFileStore, ModelID, Store},
 };
 use std::{collections::BTreeMap, fmt::Debug, fs, path::Path};
 use tempfile::tempdir;
@@ -29,18 +29,22 @@ where
     let store = store_test(None)?;
     let stored_model = add_storage(model, &store)?;
     let annotation = stored_model
+        .model
         .get_annotation()
         .expect("Annotation missing from `pod_style`");
     assert_eq!(
         store.list_pod()?,
         BTreeMap::from([
-            ("hash".to_owned(), vec![stored_model.get_hash().to_owned()],),
+            (
+                "hash".to_owned(),
+                vec![stored_model.model.get_hash().to_owned()],
+            ),
             ("name".to_owned(), vec![annotation.name.clone()],),
             ("version".to_owned(), vec![annotation.version.clone()],),
         ]),
         "List didn't match."
     );
-    let loaded_model = stored_model.load(&store)?;
+    let loaded_model = stored_model.model.load(&store)?;
     assert_eq!(loaded_model, stored_model.model, "Models don't match");
     Ok(())
 }
@@ -89,5 +93,17 @@ fn pod_list_empty() -> Result<()> {
             ("version".to_owned(), vec![],),
         ])
     );
+    Ok(())
+}
+
+#[test]
+fn pod_load_from_hash() -> Result<()> {
+    let store = store_test(None)?;
+    let mut stored_model = add_storage(pod_style()?, &store)?;
+    stored_model.model.annotation = None;
+    let loaded_pod = stored_model
+        .store
+        .load_pod(&ModelID::Hash(stored_model.model.hash.clone()))?;
+    assert_eq!(loaded_pod, stored_model.model, "Models don't match");
     Ok(())
 }
