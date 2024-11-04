@@ -42,6 +42,12 @@ pub(crate) enum Kind {
 #[derive(Debug)]
 pub struct OrcaError(Kind);
 impl Error for OrcaError {}
+impl OrcaError {
+    /// Returns `true` if the error was caused by an attempt to delete a model's last annotation.
+    pub const fn is_deleting_last_annotation(&self) -> bool {
+        matches!(self.0, Kind::DeletingLastAnnotation(_, _, _))
+    }
+}
 impl Display for OrcaError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match &self.0 {

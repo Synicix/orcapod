@@ -12,7 +12,8 @@ use orcapod::{
 fn hash() -> Result<()> {
     assert_eq!(
         pod_style()?.hash,
-        "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb"
+        "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb",
+        "Hash didn't match."
     );
     Ok(())
 }
@@ -41,7 +42,8 @@ fn pod_to_yaml() -> Result<()> {
             recommended_memory: 2147483648
             required_gpu: null
             source_commit_url: https://github.com/zenml-io/zenml/tree/0.67.0
-        "}
+        "},
+        "YAML serialization didn't match."
     );
     Ok(())
 }

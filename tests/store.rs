@@ -45,7 +45,10 @@ where
         "List didn't match."
     );
     let loaded_model = stored_model.model.load(&store)?;
-    assert_eq!(loaded_model, stored_model.model, "Models don't match");
+    assert_eq!(
+        loaded_model, stored_model.model,
+        "Loaded model doesn't match."
+    );
     Ok(())
 }
 
@@ -71,14 +74,24 @@ fn pod_files() -> Result<()> {
         let spec_file = store.make_path::<Pod>(&pod_style.hash, LocalFileStore::SPEC_RELPATH);
         {
             let _pod = add_storage(pod_style, &store)?;
-            assert!(spec_file.exists());
-            assert!(annotation_file.exists());
+            assert!(spec_file.exists(), "Spec file missing.");
+            assert!(annotation_file.exists(), "Annotation file missing.");
         };
-        assert!(!spec_file.exists());
-        assert!(!annotation_file.exists());
-        assert_eq!(is_dir_empty(&spec_file, 2), Some(true));
+        assert!(!spec_file.exists(), "Spec file wasn't cleaned up.");
+        assert!(
+            !annotation_file.exists(),
+            "Annotation file wasn't cleaned up."
+        );
+        assert_eq!(
+            is_dir_empty(&spec_file, 2),
+            Some(true),
+            "Model directory wasn't cleaned up."
+        );
     };
-    assert!(!fs::exists(&store_directory)?);
+    assert!(
+        !fs::exists(&store_directory)?,
+        "Store directory wasn't cleaned up."
+    );
     Ok(())
 }
 
@@ -91,7 +104,8 @@ fn pod_list_empty() -> Result<()> {
             ("hash".to_owned(), vec![],),
             ("name".to_owned(), vec![],),
             ("version".to_owned(), vec![],),
-        ])
+        ]),
+        "Pod list is not empty."
     );
     Ok(())
 }
@@ -104,7 +118,10 @@ fn pod_load_from_hash() -> Result<()> {
     let loaded_pod = stored_model
         .store
         .load_pod(&ModelID::Hash(stored_model.model.hash.clone()))?;
-    assert_eq!(loaded_pod, stored_model.model, "Models don't match");
+    assert_eq!(
+        loaded_pod, stored_model.model,
+        "Loaded model from hash doesn't match."
+    );
     Ok(())
 }
 
@@ -137,6 +154,7 @@ fn pod_annotation_delete() -> Result<()> {
                 vec!["0.5.0".to_owned(), "0.67.0".to_owned()],
             ),
         ]),
+        "Pod list didn't return 2 expected entries."
     );
     store.delete_annotation::<Pod>("new-name", "0.5.0")?;
     assert_eq!(
@@ -149,11 +167,14 @@ fn pod_annotation_delete() -> Result<()> {
             ("name".to_owned(), vec!["style-transfer".to_owned()],),
             ("version".to_owned(), vec!["0.67.0".to_owned()],),
         ]),
+        "Pod list didn't return 1 expected entry."
     );
-    assert!(store
-        .delete_annotation::<Pod>("style-transfer", "0.67.0")
-        .expect_err("Unexpectedly succeeded.")
-        .to_string()
-        .contains("Attempted to delete the last annotation"));
+    assert!(
+        store
+            .delete_annotation::<Pod>("style-transfer", "0.67.0")
+            .expect_err("Unexpectedly succeeded.")
+            .is_deleting_last_annotation(),
+        "Returned a different OrcaError than one expected for deleting the last annotation."
+    );
     Ok(())
 }
