@@ -44,10 +44,10 @@ impl Store for LocalFileStore {
 
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
         let hash = self.lookup_hash::<T>(name, version)?;
-        let (count, _) = Self::parse_annotation_path(
+        let count = Self::parse_annotation_path(
             &self.make_path::<T>(&hash, Self::make_annotation_relpath("*", "*")),
         )?
-        .size_hint();
+        .count();
         if count == 1 {
             return Err(OrcaError::from(Kind::DeletingLastAnnotation(
                 get_type_name::<T>(),
