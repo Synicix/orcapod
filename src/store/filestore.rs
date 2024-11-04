@@ -44,7 +44,7 @@ impl Store for LocalFileStore {
 
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
         let hash = self.lookup_hash::<T>(name, version)?;
-        let count = Self::parse_annotation_path(
+        let count = Self::find_annotation(
             &self.make_path::<T>(&hash, Self::make_annotation_relpath("*", "*")),
         )?
         .count();
@@ -91,7 +91,7 @@ impl LocalFileStore {
         .join(relpath)
     }
 
-    fn parse_annotation_path(path: &Path) -> Result<impl Iterator<Item = Result<ModelInfo>>> {
+    fn find_annotation(glob_pattern: &Path) -> Result<impl Iterator<Item = Result<ModelInfo>>> {
         let re = Regex::new(
             r"(?x)
             ^.*
@@ -105,7 +105,7 @@ impl LocalFileStore {
                         \.yaml
             $",
         )?;
-        let paths = glob::glob(&path.to_string_lossy())?.map(move |filepath| {
+        let paths = glob::glob(&glob_pattern.to_string_lossy())?.map(move |filepath| {
             let filepath_string = String::from(filepath?.to_string_lossy());
             let group = re
                 .captures(&filepath_string)
@@ -120,7 +120,7 @@ impl LocalFileStore {
     }
 
     fn lookup_hash<T>(&self, name: &str, version: &str) -> Result<String> {
-        let model_info = Self::parse_annotation_path(
+        let model_info = Self::find_annotation(
             &self.make_path::<T>("*", &Self::make_annotation_relpath(name, version)),
         )?
         .next()
@@ -205,7 +205,7 @@ impl LocalFileStore {
     }
 
     fn list_model<T>(&self) -> Result<BTreeMap<String, Vec<String>>> {
-        let (names, (hashes, versions)) = Self::parse_annotation_path(
+        let (names, (hashes, versions)) = Self::find_annotation(
             &self.make_path::<T>("*", &Self::make_annotation_relpath("*", "*")),
         )?
         .map(|model_info| {
