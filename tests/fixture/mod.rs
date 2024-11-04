@@ -1,5 +1,9 @@
 #![expect(clippy::expect_used, reason = "Expect OK in tests.")]
 #![expect(
+    clippy::unwrap_in_result,
+    reason = "Expect OK in tests that return result."
+)]
+#![expect(
     clippy::missing_errors_doc,
     reason = "Integration tests won't be included in documentation."
 )]
@@ -54,14 +58,14 @@ pub fn pod_style() -> Result<Pod> {
     )
 }
 
-pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
-    impl Deref for TestLocalStore {
+pub fn store_test(store_directory: Option<&str>) -> Result<TestStore> {
+    impl Deref for TestStore {
         type Target = LocalFileStore;
         fn deref(&self) -> &Self::Target {
             &self.store
         }
     }
-    impl Drop for TestLocalStore {
+    impl Drop for TestStore {
         fn drop(&mut self) {
             fs::remove_dir_all(self.store.get_directory()).expect("Failed to teardown store.");
         }
@@ -70,22 +74,19 @@ pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
     let store =
         store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
     fs::create_dir_all(store.get_directory())?;
-    Ok(TestLocalStore { store })
+    Ok(TestStore { store })
 }
 
 // --- helper functions ---
 
-pub fn add_storage<T: TestSetup>(
-    model: T,
-    store: &TestLocalStore,
-) -> Result<TestLocallyStoredModel<T>> {
-    impl<'base, T: TestSetup> Deref for TestLocallyStoredModel<'base, T> {
+pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
+    impl<'base, T: TestSetup> Deref for TestStoredModel<'base, T> {
         type Target = T;
         fn deref(&self) -> &Self::Target {
             &self.model
         }
     }
-    impl<'base, T: TestSetup> Drop for TestLocallyStoredModel<'base, T> {
+    impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
         fn drop(&mut self) {
             self.model
                 .delete(self.store)
@@ -93,33 +94,51 @@ pub fn add_storage<T: TestSetup>(
         }
     }
     model.save(store)?;
-    let model_with_storage = TestLocallyStoredModel { store, model };
+    let model_with_storage = TestStoredModel { store, model };
     Ok(model_with_storage)
 }
 
 // --- util ---
 
 #[derive(Debug)]
-pub struct TestLocalStore {
+pub struct TestStore {
     store: LocalFileStore,
 }
 
 #[derive(Debug)]
-pub struct TestLocallyStoredModel<'base, T: TestSetup> {
-    pub store: &'base TestLocalStore,
+pub struct TestStoredModel<'base, T: TestSetup> {
+    pub store: &'base TestStore,
     pub model: T,
 }
 
 pub trait TestSetup {
+    type Target;
     fn save(&self, store: &LocalFileStore) -> Result<()>;
     fn delete(&self, store: &LocalFileStore) -> Result<()>;
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target>;
+    fn get_annotation(&self) -> Option<&Annotation>;
+    fn get_hash(&self) -> &str;
 }
 
 impl TestSetup for Pod {
+    type Target = Self;
     fn save(&self, store: &LocalFileStore) -> Result<()> {
         store.save_pod(self)
     }
     fn delete(&self, store: &LocalFileStore) -> Result<()> {
         store.delete_pod(&ModelID::Hash(self.hash.clone()))
+    }
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
+        let annotation = self.annotation.as_ref().expect("Annotation missing.");
+        store.load_pod(&ModelID::Annotation(
+            annotation.name.clone(),
+            annotation.version.clone(),
+        ))
+    }
+    fn get_annotation(&self) -> Option<&Annotation> {
+        self.annotation.as_ref()
+    }
+    fn get_hash(&self) -> &str {
+        &self.hash
     }
 }

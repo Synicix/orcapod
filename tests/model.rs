@@ -9,7 +9,7 @@ use orcapod::{
 };
 
 #[test]
-fn verify_hash() -> Result<()> {
+fn hash() -> Result<()> {
     assert_eq!(
         pod_style()?.hash,
         "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb"
@@ -18,7 +18,7 @@ fn verify_hash() -> Result<()> {
 }
 
 #[test]
-fn verify_pod_to_yaml() -> Result<()> {
+fn pod_to_yaml() -> Result<()> {
     assert_eq!(
         to_yaml::<Pod>(&pod_style()?)?,
         indoc! {"
