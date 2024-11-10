@@ -1,0 +1,14 @@
+{
+    "ignoreWords": [
+        "relpath",
+        "filestore",
+        "cpus",
+        "orcapod",
+        "tempfile",
+        "tempdir",
+        "millicores",
+        "zenmldocker",
+        "zenml",
+        "indoc"
+    ]
+}

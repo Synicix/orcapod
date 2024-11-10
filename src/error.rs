@@ -1,4 +1,3 @@
-use anyhow;
 use colored::Colorize;
 use glob;
 use regex;
@@ -9,24 +8,28 @@ use std::{
     fmt::{Display, Formatter},
     io,
     path::PathBuf,
+    result,
 };
 /// Shorthand for a Result that returns an `OrcaError`.
-pub type Result<T> = anyhow::Result<T, OrcaError>;
-// pub type Result<T> = result::Result<T, OrcaError>;
+pub type Result<T> = result::Result<T, OrcaError>;
 
 /// Possible errors you may encounter.
 #[derive(Debug)]
 pub(crate) enum Kind {
     /// Returned if a file is not expected to exist.
     FileExists(PathBuf),
-    /// Returned if a file is expected to have a parent.
-    FileHasNoParent(PathBuf),
     /// Returned if an annotation was expected to exist.
     NoAnnotationFound(String, String, String),
+    /// Returned if a model save was attempted without an annotation set.
+    MissingAnnotationOnSave,
+    /// Returned if an annotation delete was attempted on a model's last annotation.
+    DeletingLastAnnotation(String, String, String),
+    /// Returned if a regular expression was expected to match.
+    NoRegexMatch,
     /// Wrapper around `glob::GlobError`
     GlobError(glob::GlobError),
     /// Wrapper around `glob::PatternError`
-    GlobPaternError(glob::PatternError),
+    GlobPatternError(glob::PatternError),
     /// Wrapper around `regex::Error`
     RegexError(regex::Error),
     /// Wrapper around `serde_yaml::Error`
@@ -39,6 +42,12 @@ pub(crate) enum Kind {
 #[derive(Debug)]
 pub struct OrcaError(Kind);
 impl Error for OrcaError {}
+impl OrcaError {
+    /// Returns `true` if the error was caused by an attempt to delete a model's last annotation.
+    pub const fn is_deleting_last_annotation(&self) -> bool {
+        matches!(self.0, Kind::DeletingLastAnnotation(_, _, _))
+    }
+}
 impl Display for OrcaError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match &self.0 {
@@ -49,18 +58,23 @@ impl Display for OrcaError {
                     path.to_string_lossy().bright_cyan()
                 )
             }
-            Kind::FileHasNoParent(path) => {
-                write!(
-                    f,
-                    "File `{}` has no parent.",
-                    path.to_string_lossy().bright_red()
-                )
-            }
             Kind::NoAnnotationFound(class, name, version) => {
                 write!(f, "No annotation found for `{name}:{version}` {class}.")
             }
+            Kind::MissingAnnotationOnSave => {
+                write!(f, "No annotation found when attempting to store.")
+            }
+            Kind::DeletingLastAnnotation(class, name, version) => {
+                write!(
+                    f,
+                    "Attempted to delete the last annotation for `{name}:{version}` {class}."
+                )
+            }
+            Kind::NoRegexMatch => {
+                write!(f, "No match for regex.")
+            }
             Kind::GlobError(error) => write!(f, "{error}"),
-            Kind::GlobPaternError(error) => write!(f, "{error}"),
+            Kind::GlobPatternError(error) => write!(f, "{error}"),
             Kind::SerdeYamlError(error) => write!(f, "{error}"),
             Kind::RegexError(error) => write!(f, "{error}"),
             Kind::IoError(error) => write!(f, "{error}"),
@@ -74,7 +88,7 @@ impl From<glob::GlobError> for OrcaError {
 }
 impl From<glob::PatternError> for OrcaError {
     fn from(error: glob::PatternError) -> Self {
-        Self(Kind::GlobPaternError(error))
+        Self(Kind::GlobPatternError(error))
     }
 }
 impl From<serde_yaml::Error> for OrcaError {

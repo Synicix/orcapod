@@ -1,74 +1,24 @@
-use orcapod::error::Result;
-use orcapod::store::ModelInfo;
+#![expect(clippy::expect_used, reason = "Expect OK in tests.")]
+#![expect(
+    clippy::unwrap_in_result,
+    reason = "Expect OK in tests that return result."
+)]
+#![expect(
+    clippy::missing_errors_doc,
+    reason = "Integration tests won't be included in documentation."
+)]
+
 use orcapod::{
-    model::{to_yaml, Annotation, Pod, StreamInfo},
+    error::Result,
+    model::{Annotation, Pod, StreamInfo},
     store::{filestore::LocalFileStore, ModelID, Store},
 };
-use std::{
-    collections::BTreeMap,
-    fs,
-    ops::{Deref, DerefMut},
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf};
 use tempfile::tempdir;
 
-#[derive(PartialEq, Clone)]
-pub enum Model {
-    Pod(Pod),
-}
+// --- fixtures ---
 
-pub enum ModelType {
-    Pod,
-}
-
-impl Model {
-    #[expect(clippy::unwrap_used, reason = "test")]
-    pub fn get_name(&self) -> &str {
-        match self {
-            Self::Pod(pod) => &pod.annotation.as_ref().unwrap().name,
-        }
-    }
-
-    pub fn get_hash(&self) -> &str {
-        match self {
-            Self::Pod(pod) => &pod.hash,
-        }
-    }
-
-    #[expect(clippy::unwrap_used, reason = "test")]
-    pub fn get_version(&self) -> &str {
-        match self {
-            Self::Pod(pod) => &pod.annotation.as_ref().unwrap().version,
-        }
-    }
-
-    pub const fn is_annotation_none(&self) -> bool {
-        match self {
-            Self::Pod(pod) => pod.annotation.is_none(),
-        }
-    }
-
-    pub fn to_yaml(&self) -> Result<String> {
-        match self {
-            Self::Pod(pod) => to_yaml(pod),
-        }
-    }
-
-    #[expect(clippy::unwrap_used, reason = "test")]
-    pub fn set_name(&mut self, name: &str) {
-        match self {
-            Self::Pod(pod) => name.clone_into(&mut pod.annotation.as_mut().unwrap().name),
-        }
-    }
-}
-
-pub fn get_test_item(item_type: &ModelType) -> Result<Model> {
-    match item_type {
-        ModelType::Pod => Ok(Model::Pod(get_test_pod()?)),
-    }
-}
-
-pub fn get_test_pod() -> Result<Pod> {
+pub fn pod_style() -> Result<Pod> {
     Pod::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
@@ -108,90 +58,84 @@ pub fn get_test_pod() -> Result<Pod> {
     )
 }
 
+pub fn store_test(store_directory: Option<&str>) -> Result<TestStore> {
+    let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
+    let store =
+        store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
+    fs::create_dir_all(store.get_directory())?;
+    Ok(TestStore { store })
+}
+
+// --- helper functions ---
+
+pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
+    model.save(store)?;
+    let model_with_storage = TestStoredModel { store, model };
+    Ok(model_with_storage)
+}
+
+// --- util ---
+
 #[derive(Debug)]
-pub struct TestLocalStore {
+pub struct TestStore {
     store: LocalFileStore,
 }
 
-impl Deref for TestLocalStore {
+#[derive(Debug)]
+pub struct TestStoredModel<'base, T: TestSetup> {
+    pub store: &'base TestStore,
+    pub model: T,
+}
+
+impl Deref for TestStore {
     type Target = LocalFileStore;
     fn deref(&self) -> &Self::Target {
         &self.store
     }
 }
 
-impl DerefMut for TestLocalStore {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.store
-    }
-}
-
-#[expect(clippy::expect_used, reason = "test")]
-impl Drop for TestLocalStore {
+impl Drop for TestStore {
     fn drop(&mut self) {
         fs::remove_dir_all(self.store.get_directory()).expect("Failed to teardown store.");
     }
 }
 
-#[expect(clippy::unwrap_used, reason = "test")]
-impl TestLocalStore {
-    /// # Panics
-    /// Will panic if fail to fetch stuff related to annotation
-    pub fn make_annotation_path(&self, item: &Model) -> PathBuf {
-        match item {
-            Model::Pod(pod) => self.store.make_annotation_path::<Pod>(
-                &pod.hash,
-                &pod.annotation.as_ref().unwrap().name,
-                &pod.annotation.as_ref().unwrap().version,
-            ),
-        }
-    }
-
-    pub fn make_path(&self, model_type: &ModelType, hash: &str, file_name: &str) -> PathBuf {
-        match model_type {
-            ModelType::Pod => self.store.make_path::<Pod>(hash, file_name),
-        }
-    }
-
-    pub fn save_model(&self, model: &Model) -> Result<()> {
-        match model {
-            Model::Pod(pod) => self.store.save_pod(pod),
-        }
-    }
-
-    pub fn load_model(&self, model_type: &ModelType, item_key: &ModelID) -> Result<Model> {
-        match model_type {
-            ModelType::Pod => Ok(Model::Pod(self.store.load_pod(item_key)?)),
-        }
-    }
-
-    pub fn list_model(&self, model_type: &ModelType) -> Result<Vec<ModelInfo>> {
-        match model_type {
-            ModelType::Pod => self.store.list_pod(),
-        }
-    }
-
-    pub fn delete_item(&self, model_type: &ModelType, item_key: &ModelID) -> Result<()> {
-        match model_type {
-            ModelType::Pod => self.store.delete_pod(item_key),
-        }
-    }
-
-    pub fn delete_item_annotation(
-        &mut self,
-        item_type: &ModelType,
-        name: &str,
-        version: &str,
-    ) -> Result<()> {
-        match item_type {
-            ModelType::Pod => Ok(self.store.delete_annotation::<Pod>(name, version)?),
-        }
+impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
+    fn drop(&mut self) {
+        self.model
+            .delete(self.store)
+            .expect("Failed to teardown model.");
     }
 }
 
-pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
-    let tmp_directory = tempdir()?.path().to_owned();
-    let store =
-        store_directory.map_or_else(|| LocalFileStore::new(&tmp_directory), LocalFileStore::new);
-    Ok(TestLocalStore { store })
+pub trait TestSetup {
+    type Target;
+    fn save(&self, store: &LocalFileStore) -> Result<()>;
+    fn delete(&self, store: &LocalFileStore) -> Result<()>;
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target>;
+    fn get_annotation(&self) -> Option<&Annotation>;
+    fn get_hash(&self) -> &str;
+}
+
+impl TestSetup for Pod {
+    type Target = Self;
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
+        store.save_pod(self)
+    }
+    fn delete(&self, store: &LocalFileStore) -> Result<()> {
+        store.delete_pod(&ModelID::Hash(self.hash.clone()))
+    }
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
+        let annotation = self.annotation.as_ref().expect("Annotation missing.");
+        store.load_pod(&ModelID::Annotation(
+            annotation.name.clone(),
+            annotation.version.clone(),
+        ))
+    }
+    fn get_annotation(&self) -> Option<&Annotation> {
+        self.annotation.as_ref()
+    }
+    fn get_hash(&self) -> &str {
+        &self.hash
+    }
 }

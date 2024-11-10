@@ -32,7 +32,8 @@
 				"vadimcn.vscode-lldb", // Rust CodeLLDB debugger
 				"ms-vscode.hexeditor", // Binary preview in HEX
 				"tamasfe.even-better-toml", // *.toml language support
-				"eamodio.gitlens" // Git explorer in VSCode
+				"eamodio.gitlens", // Git explorer in VSCode
+				"streetsidesoftware.code-spell-checker" // Catch spelling errors in docs
 			]
 		}
 	}

@@ -1,3 +1,4 @@
+use heck::ToSnakeCase;
 use sha2::{Digest, Sha256};
 use std::any::type_name;
 
@@ -11,7 +12,7 @@ pub fn get_type_name<T>() -> String {
         .collect::<Vec<&str>>()
         .last()
         .unwrap()
-        .to_lowercase()
+        .to_snake_case()
 }
 
 pub fn hash(buffer: &str) -> String {
