@@ -1,24 +1,27 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::get_test_pod;
+use fixture::pod_style;
 use indoc::indoc;
-use orcapod::error::Result;
-use orcapod::model::{to_yaml, Pod};
+use orcapod::{
+    error::Result,
+    model::{to_yaml, Pod},
+};
 
 #[test]
-fn verify_hash() -> Result<()> {
+fn hash() -> Result<()> {
     assert_eq!(
-        get_test_pod()?.hash,
-        "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb"
+        pod_style()?.hash,
+        "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb",
+        "Hash didn't match."
     );
     Ok(())
 }
 
 #[test]
-fn verify_pod_to_yaml() -> Result<()> {
+fn pod_to_yaml() -> Result<()> {
     assert_eq!(
-        to_yaml::<Pod>(&get_test_pod()?)?,
+        to_yaml::<Pod>(&pod_style()?)?,
         indoc! {"
             class: pod
             command: tail -f /dev/null
@@ -39,7 +42,8 @@ fn verify_pod_to_yaml() -> Result<()> {
             recommended_memory: 2147483648
             required_gpu: null
             source_commit_url: https://github.com/zenml-io/zenml/tree/0.67.0
-        "}
+        "},
+        "YAML serialization didn't match."
     );
     Ok(())
 }

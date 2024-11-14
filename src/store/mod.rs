@@ -1,28 +1,50 @@
+use std::path::Path;
+
 use crate::{
     error::Result,
     model::{Pod, PodJob},
 };
 
-/// Enum for identification to
+/// Options for identifying a model.
 pub enum ModelID {
-    /// Identification via name and version
-    NameVer(String, String),
-    /// Identification by hash
+    /// Identifying by the hash value of a model as a string.
     Hash(String),
+    /// Identifying by the `(name, version)` of an annotation for a model as strings.
+    Annotation(String, String),
 }
 
-/// Struct for list functios
+/// Metadata for a model.
+#[derive(Debug, PartialEq, Eq)]
 pub struct ModelInfo {
-    /// Name from annotation of the model struct
+    /// A model's name.
     pub name: String,
-    /// Version from annotation from model struct
+    /// A model's version.
     pub version: String,
-    /// Hash of the model struct
+    /// A model's hash.
     pub hash: String,
 }
 
 /// Standard behavior of any store backend supported.
 pub trait Store {
+    /// Computes the checksum for a given file or folder using merkle tree
+    ///
+    /// # Errors
+    /// Return ``merkle_hash`` errors
+    fn compute_checksum_for_file(&self, path: impl AsRef<Path>) -> Result<String>;
+
+    /// Function to read file into memory
+    ///
+    /// # Errors
+    ///
+    /// Will error out with standard ``io::errors``
+    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>>;
+
+    /// Save file to local file store, will error out if file already exist
+    ///
+    /// # Errors
+    /// Will error out with standard ``io::errors``
+    fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()>;
+
     /// How a pod is stored.
     ///
     /// # Errors
@@ -42,7 +64,7 @@ pub trait Store {
     ///
     /// Will return `Err` if there is an issue querying metadata from existing pods in the store.
     fn list_pod(&self) -> Result<Vec<ModelInfo>>;
-    /// How to delete a stored pod (does not propagate).
+    /// How to explicitly delete a stored pod and all associated annotations (does not propagate).
     ///
     /// # Errors
     ///
@@ -75,9 +97,12 @@ pub trait Store {
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
 
     /// How to delete only annotation, which will leave the item untouched
+    /// How to explicitly delete an annotation.
     ///
     /// # Errors
-    /// Will return `Err` if there is an issue of finding the annotation and deleting it
+    ///
+    /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
+    /// and `version`.
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
 }
 /// Store implementation on a local filesystem.

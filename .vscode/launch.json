@@ -20,7 +20,7 @@
             "args": [
                 "--exact",
                 "--nocapture",
-                "verify_hash"
+                "hash"
             ],
             "cwd": "${workspaceFolder}",
         },

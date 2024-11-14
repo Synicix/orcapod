@@ -1,10 +1,15 @@
 use crate::{
     error::Result,
+    store::Store,
     util::{get_type_name, hash},
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
+
 /// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
@@ -29,28 +34,61 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
 /// Will return `Err` if there is an issue converting YAML files for spec+annotation into a model
 /// instance.
 pub fn from_yaml<T: DeserializeOwned>(
-    spec_yaml: &str,
     hash: &str,
+    spec_yaml: &str,
     annotation_yaml: Option<&str>,
 ) -> Result<T> {
-    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
-
-    // Insert annotation if there is something
-    if let Some(yaml) = annotation_yaml {
-        let annotation_map: Mapping = serde_yaml::from_str(yaml)?;
-        spec_mapping.insert("annotation".into(), Value::from(annotation_map));
+    let mut spec: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
+    spec.insert("hash".to_owned(), Value::from(hash));
+    if let Some(resolved_annotation_yaml) = annotation_yaml {
+        let annotation: Mapping = serde_yaml::from_str(resolved_annotation_yaml)?;
+        spec.insert("annotation".to_owned(), Value::from(annotation));
     }
-    spec_mapping.insert("hash".to_owned(), Value::from(hash));
 
-    Ok(serde_yaml::from_str(&serde_yaml::to_string(
-        &spec_mapping,
-    )?)?)
+    Ok(serde_yaml::from_str(&serde_yaml::to_string(&spec)?)?)
 }
 
 // --- core model structs ---
 
+/// Struct to store the path of where to look in the storage along with the checksum for hashing
+/// and/or file integrity check
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct InputData {
+    path: PathBuf,
+    content_check_sum: String,
+}
+
+impl InputData {
+    /// Upon creation, verify that the file is valid in the store and compute the checksum
+    ///
+    /// # Errors
+    /// Error out with ``std::io`` if something goes wrong
+    pub fn new<T: Store>(path: impl AsRef<Path>, store: &T) -> Result<Self> {
+        let data = store.load_file(&path)?;
+        Ok(Self {
+            path: path.as_ref().to_path_buf(),
+            content_check_sum: hash(&data),
+        })
+    }
+}
+
+/// Describe the input with two current options
+/// Singular file,
+/// or a collection of files that will be map
+///
+/// NOTE: All files are to be uploaded to the apporiate store ahead of usage
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub enum Input {
+    /// Single File to be used as input that is stored in the store
+    File(InputData),
+    /// Collection of files to be used as input (assume to be same type to match against regex)
+    FileCollection(Vec<InputData>),
+    /// For folder mounting
+    Folder(InputData),
+}
+
 /// A reusable, containerized computational unit.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
     pub annotation: Option<Annotation>,
@@ -106,7 +144,7 @@ impl Pod {
 }
 
 /// Struct to represent ``PodJob``
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct PodJob {
     /// Optional annotation for pod job
     pub annotation: Option<Annotation>,
@@ -114,20 +152,12 @@ pub struct PodJob {
     pub hash: String,
     /// Details about the pod from which the pod job was created from
     pub pod: Pod,
-    input_volume_map: BTreeMap<PathBuf, PathBuf>,
-    output_volume_map: BTreeMap<PathBuf, PathBuf>,
+    /// String is the key, variable, input is the actual path to look up
+    input_volume_map: BTreeMap<String, Input>,
+    output_volume_map: BTreeMap<String, PathBuf>,
     cpu_limit: f32, // Num of cpu to limit the pod from
     mem_limit: u64, // Bytes to limit memory
-    retry_policy: PodJobRetryPolicy,
-}
-
-/// Pod job retry policy
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
-pub enum PodJobRetryPolicy {
-    /// Will stop the job upon first failure
-    NoRetry,
-    /// Will allow n number of failures within a time window of t seconds
-    RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
+    retry_policy: RetryPolicy,
 }
 
 impl PodJob {
@@ -138,11 +168,11 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Pod,
-        input_volume_map: BTreeMap<PathBuf, PathBuf>,
-        output_volume_map: BTreeMap<PathBuf, PathBuf>,
+        input_volume_map: BTreeMap<String, Input>,
+        output_volume_map: BTreeMap<String, PathBuf>,
         cpu_limit: f32,
         mem_limit: u64,
-        retry_policy: PodJobRetryPolicy,
+        retry_policy: RetryPolicy,
     ) -> Result<Self> {
         let pod_job_no_hash = Self {
             annotation,
@@ -165,7 +195,7 @@ impl PodJob {
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Annotation {
     /// A unique name.
     pub name: String,
@@ -192,7 +222,7 @@ pub enum GPUModel {
     /// AMD-manufactured card where `String` is the specific model e.g. ???
     AMD(String),
 }
-/// Streams are named and represent an abstration for the file(s) that represent some particular
+/// Streams are named and represent an abstraction for the file(s) that represent some particular
 /// data.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
@@ -200,4 +230,13 @@ pub struct StreamInfo {
     pub path: PathBuf,
     /// Naming pattern for the stream.
     pub match_pattern: String,
+}
+
+/// Pod job retry policy
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+pub enum RetryPolicy {
+    /// Will stop the job upon first failure
+    NoRetry,
+    /// Will allow n number of failures within a time window of t seconds
+    RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
 }

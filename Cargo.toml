@@ -29,8 +29,9 @@ serde_yaml = "0.9.34"
 sha2 = "0.10.8"
 glob = "0.3.1"
 regex = "1.11.0"
+heck = "0.5.0"
 colored = "2.1.0"
-anyhow = "1.0.91"
+merkle_hash = "3.7.0"
 
 [dev-dependencies]
 tempfile = "3.13.0"
@@ -51,7 +52,6 @@ restriction = "deny"
 nursery = "deny"
 cargo = "deny"
 
-
 arithmetic_side_effects = { level = "allow", priority = 127 }          # allow arithmatic for convenience though it could overflow
 as_conversions = { level = "allow", priority = 127 }                   # allow casting
 assertions_on_result_states = { level = "allow", priority = 127 }      # allow checking is_ok/is_err
@@ -69,6 +69,7 @@ implicit_return = { level = "allow", priority = 127 }                  # missing
 indexing_slicing = { level = "allow", priority = 127 }                 # allow since guaranteed and error handling is overkill
 inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }      # intel syntax ok
 integer_division = { level = "allow", priority = 127 }                 # allow discarding remainder
+iter_over_hash_type = { level = "allow", priority = 127 }              # allow iteartion over hash type objects when order doesn't matter
 little_endian_bytes = { level = "allow", priority = 127 }              # allow to_le_bytes / from_le_bytes
 missing_asserts_for_indexing = { level = "allow", priority = 127 }     # missing assert before indexing ok
 missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing docs on private ok
@@ -96,6 +97,8 @@ string_add = { level = "allow", priority = 127 }                       # simple 
 string_lit_chars_any = { level = "allow", priority = 127 }             # favor readability until a perf case comes up
 todo = { level = "warn", priority = 127 }                              # warn todos
 use_debug = { level = "warn", priority = 127 }                         # debug print
+
+
 # temporary
 single_call_fn = { level = "allow", priority = 127 }            # remove once other models are in
 tests_outside_test_module = { level = "allow", priority = 127 } # for now due to false-positive for integration tests: https://github.com/rust-lang/rust-clippy/pull/13038
