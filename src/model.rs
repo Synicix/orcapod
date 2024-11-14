@@ -64,10 +64,9 @@ impl InputData {
     /// # Errors
     /// Error out with ``std::io`` if something goes wrong
     pub fn new<T: Store>(path: impl AsRef<Path>, store: &T) -> Result<Self> {
-        let data = store.load_file(&path)?;
         Ok(Self {
             path: path.as_ref().to_path_buf(),
-            content_check_sum: hash(&data),
+            content_check_sum: store.compute_checksum_for_file(path)?,
         })
     }
 }
