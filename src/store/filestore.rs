@@ -13,6 +13,9 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
+
+static FILE_STORE_FOLDER_NAME: &str = "file_store";
+
 /// Support for a storage backend on a local filesystem directory.
 #[derive(Debug)]
 pub struct LocalFileStore {
@@ -64,22 +67,33 @@ impl Store for LocalFileStore {
     }
 
     fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String> {
-        Ok(MerkleTree::builder(path.as_ref().to_string_lossy())
-            .algorithm(Algorithm::Blake3)
-            .hash_names(true)
-            .build()?
-            .root
-            .item
-            .hash
-            .to_hex_string())
+        Ok(MerkleTree::builder(
+            self.directory
+                .join(FILE_STORE_FOLDER_NAME)
+                .join(path)
+                .to_string_lossy(),
+        )
+        .algorithm(Algorithm::Blake3)
+        .hash_names(true)
+        .build()?
+        .root
+        .item
+        .hash
+        .to_hex_string())
     }
 
     fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
-        Ok(fs::read(self.directory.join("store").join(path))?)
+        Ok(fs::read(
+            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
+        )?)
     }
 
     fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()> {
-        Self::save_file_internal(self.directory.join(path).join("file_store"), content, true)
+        Self::save_file_internal(
+            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
+            content,
+            true,
+        )
     }
 
     fn wipe(&self) -> Result<()> {
