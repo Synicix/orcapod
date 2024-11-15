@@ -30,7 +30,7 @@ pub trait Store {
     ///
     /// # Errors
     /// Return ``merkle_hash`` errors
-    fn compute_checksum_for_file(&self, path: impl AsRef<Path>) -> Result<String>;
+    fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String>;
 
     /// Function to read file into memory
     ///

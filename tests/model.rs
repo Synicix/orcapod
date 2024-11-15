@@ -1,12 +1,10 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
+use anyhow::Result;
 use fixture::pod_style;
 use indoc::indoc;
-use orcapod::{
-    error::Result,
-    model::{to_yaml, Pod},
-};
+use orcapod::model::{to_yaml, Pod};
 
 #[test]
 fn hash() -> Result<()> {

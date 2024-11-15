@@ -8,18 +8,20 @@
     reason = "Integration tests won't be included in documentation."
 )]
 
+use anyhow::Result;
+use image::{DynamicImage, ImageFormat, RgbImage};
 use orcapod::{
-    error::Result,
     model::{Annotation, Input, InputData, Pod, PodJob, RetryPolicy, StreamInfo},
     store::{filestore::LocalFileStore, ModelID, Store},
 };
-use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf};
+use rand::Rng;
+use std::{collections::BTreeMap, fs, io::Cursor, ops::Deref, path::PathBuf};
 use tempfile::tempdir;
 
 // --- fixtures ---
 
 pub fn pod_style() -> Result<Pod> {
-    Pod::new(
+    Ok(Pod::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod.".to_owned(),
@@ -55,18 +57,53 @@ pub fn pod_style() -> Result<Pod> {
         0.25,                // 250 millicores as frac cores
         (2_u64) * (1 << 30), // 2GiB in bytes
         None,
-    )
+    )?)
 }
 
+static IMAGE_DIM: u32 = 512;
+
 fn pod_job_style<T: Store>(store: &T) -> Result<PodJob> {
+    // Generate random uniform image
+    let mut img_buffer = RgbImage::new(IMAGE_DIM, IMAGE_DIM);
+    let mut rng = rand::thread_rng();
+
+    for (_, _, pixel) in img_buffer.enumerate_pixels_mut() {
+        *pixel = image::Rgb([
+            rng.gen_range(0..255),
+            rng.gen_range(0..255),
+            rng.gen_range(0..255),
+        ]);
+    }
+
+    // Covert it to rawbytes
+    let mut bytes = Vec::new();
+    let img = DynamicImage::from(img_buffer);
+    img.write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)?;
+
+    // Store it in the store
+    store.save_file("style.png", bytes.clone())?;
+    store.save_file("image.png", bytes)?;
+
+    // Create the input volume map
     let mut input_volume_map = BTreeMap::new();
 
-    input_volume_map.insert("style".to_owned(), Input::File(InputData::new("style.png", store)?));
-    input_volume_map.insert("image".to_owned(), Input::File(InputData::new("image.png", store)?));
+    input_volume_map.insert(
+        "style".to_owned(),
+        Input::File(InputData::new("style.png", store)?),
+    );
+    input_volume_map.insert(
+        "image".to_owned(),
+        Input::File(InputData::new("image.png", store)?),
+    );
 
-    let mut output_volume_map
+    //
+    let mut output_volume_map = BTreeMap::new();
+    output_volume_map.insert(
+        "stylized_image".to_owned(),
+        PathBuf::from("stylized_image.png"),
+    );
 
-    PodJob::new(
+    Ok(PodJob::new(
         Some(Annotation {
             name: "style-transfer-job".to_owned(),
             description: "This is an example pod job.".to_owned(),
@@ -78,7 +115,7 @@ fn pod_job_style<T: Store>(store: &T) -> Result<PodJob> {
         2.0_f32,
         (4_u64) * (1 << 30),
         RetryPolicy::NoRetry,
-    )
+    )?)
 }
 
 pub fn store_test(store_directory: Option<&str>) -> Result<TestStore> {
@@ -143,17 +180,17 @@ pub trait TestSetup {
 impl TestSetup for Pod {
     type Target = Self;
     fn save(&self, store: &LocalFileStore) -> Result<()> {
-        store.save_pod(self)
+        Ok(store.save_pod(self)?)
     }
     fn delete(&self, store: &LocalFileStore) -> Result<()> {
-        store.delete_pod(&ModelID::Hash(self.hash.clone()))
+        Ok(store.delete_pod(&ModelID::Hash(self.hash.clone()))?)
     }
     fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
         let annotation = self.annotation.as_ref().expect("Annotation missing.");
-        store.load_pod(&ModelID::Annotation(
+        Ok(store.load_pod(&ModelID::Annotation(
             annotation.name.clone(),
             annotation.version.clone(),
-        ))
+        ))?)
     }
     fn get_annotation(&self) -> Option<&Annotation> {
         self.annotation.as_ref()

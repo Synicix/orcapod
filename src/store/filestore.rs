@@ -73,7 +73,7 @@ impl Store for LocalFileStore {
         self.delete_model::<PodJob>(model_id)
     }
 
-    fn compute_checksum_for_file(&self, path: impl AsRef<Path>) -> Result<String> {
+    fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String> {
         Ok(String::from_utf8(
             MerkleTree::builder(path.as_ref().to_string_lossy())
                 .algorithm(Algorithm::Blake3)
