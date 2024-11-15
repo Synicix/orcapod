@@ -21,8 +21,6 @@ pub(crate) enum Kind {
     FileExists(PathBuf),
     /// Returned if an annotation was expected to exist.
     NoAnnotationFound(String, String, String),
-    /// Returned if an annotation delete was attempted on a model's last annotation.
-    DeletingLastAnnotation(String, String, String),
     /// Returned if a regular expression was expected to match.
     NoRegexMatch,
     /// Wrapper around `glob::GlobError`
@@ -45,12 +43,7 @@ pub(crate) enum Kind {
 #[derive(Debug)]
 pub struct OrcaError(Kind);
 impl Error for OrcaError {}
-impl OrcaError {
-    /// Returns `true` if the error was caused by an attempt to delete a model's last annotation.
-    pub const fn is_deleting_last_annotation(&self) -> bool {
-        matches!(self.0, Kind::DeletingLastAnnotation(_, _, _))
-    }
-}
+
 impl Display for OrcaError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match &self.0 {
@@ -63,12 +56,6 @@ impl Display for OrcaError {
             }
             Kind::NoAnnotationFound(class, name, version) => {
                 write!(f, "No annotation found for `{name}:{version}` {class}.")
-            }
-            Kind::DeletingLastAnnotation(class, name, version) => {
-                write!(
-                    f,
-                    "Attempted to delete the last annotation for `{name}:{version}` {class}."
-                )
             }
             Kind::NoRegexMatch => {
                 write!(f, "No match for regex.")

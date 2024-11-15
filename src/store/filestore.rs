@@ -5,7 +5,7 @@ use crate::{
     util::get_type_name,
 };
 use colored::Colorize;
-use merkle_hash::{Algorithm, MerkleTree};
+use merkle_hash::{Algorithm, Encodable, MerkleTree};
 use regex::Regex;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -39,17 +39,7 @@ impl Store for LocalFileStore {
 
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
         let hash = self.lookup_hash::<T>(name, version)?;
-        let count = Self::find_annotation(
-            &self.make_hash_rel_path::<T>(&hash, Self::make_annotation_relpath("*", "*")),
-        )?
-        .count();
-        if count == 1 {
-            return Err(OrcaError::from(Kind::DeletingLastAnnotation(
-                get_type_name::<T>(),
-                name.to_owned(),
-                version.to_owned(),
-            )));
-        }
+
         let annotation_file =
             self.make_hash_rel_path::<T>(&hash, &Self::make_annotation_relpath(name, version));
         fs::remove_file(&annotation_file)?;
@@ -74,15 +64,14 @@ impl Store for LocalFileStore {
     }
 
     fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String> {
-        Ok(String::from_utf8(
-            MerkleTree::builder(path.as_ref().to_string_lossy())
-                .algorithm(Algorithm::Blake3)
-                .hash_names(true)
-                .build()?
-                .root
-                .item
-                .hash,
-        )?)
+        Ok(MerkleTree::builder(path.as_ref().to_string_lossy())
+            .algorithm(Algorithm::Blake3)
+            .hash_names(true)
+            .build()?
+            .root
+            .item
+            .hash
+            .to_hex_string())
     }
 
     fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
@@ -90,7 +79,11 @@ impl Store for LocalFileStore {
     }
 
     fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()> {
-        Self::save_file_internal(path, content, true)
+        Self::save_file_internal(self.directory.join(path).join("file_store"), content, true)
+    }
+
+    fn wipe(&self) -> Result<()> {
+        Ok(fs::remove_dir_all(&self.directory)?)
     }
 }
 

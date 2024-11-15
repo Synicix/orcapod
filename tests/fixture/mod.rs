@@ -1,8 +1,5 @@
 #![expect(clippy::expect_used, reason = "Expect OK in tests.")]
-#![expect(
-    clippy::unwrap_in_result,
-    reason = "Expect OK in tests that return result."
-)]
+#![expect(clippy::unwrap_used, reason = "Expect test to unwrap without failed")]
 #![expect(
     clippy::missing_errors_doc,
     reason = "Integration tests won't be included in documentation."
@@ -12,11 +9,10 @@ use anyhow::Result;
 use image::{DynamicImage, ImageFormat, RgbImage};
 use orcapod::{
     model::{Annotation, Input, InputData, Pod, PodJob, RetryPolicy, StreamInfo},
-    store::{filestore::LocalFileStore, ModelID, Store},
+    store::{ModelID, ModelInfo, Store},
 };
 use rand::Rng;
-use std::{collections::BTreeMap, fs, io::Cursor, ops::Deref, path::PathBuf};
-use tempfile::tempdir;
+use std::{collections::BTreeMap, io::Cursor, ops::Deref, path::PathBuf};
 
 // --- fixtures ---
 
@@ -109,7 +105,7 @@ fn pod_job_style<T: Store>(store: &T) -> Result<PodJob> {
             description: "This is an example pod job.".to_owned(),
             version: "0.67.0".to_owned(),
         }),
-        pod_style()?,
+        pod_style()?.hash,
         input_volume_map,
         output_volume_map,
         2.0_f32,
@@ -118,84 +114,112 @@ fn pod_job_style<T: Store>(store: &T) -> Result<PodJob> {
     )?)
 }
 
-pub fn store_test(store_directory: Option<&str>) -> Result<TestStore> {
-    let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
-    let store =
-        store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
-    fs::create_dir_all(store.get_directory())?;
-    Ok(TestStore { store })
-}
-
-// --- helper functions ---
-
-pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
-    model.save(store)?;
-    let model_with_storage = TestStoredModel { store, model };
-    Ok(model_with_storage)
-}
-
 // --- util ---
-
 #[derive(Debug)]
-pub struct TestStore {
-    store: LocalFileStore,
+pub struct StoreScaffold<T: Store> {
+    pub store: T,
 }
 
-#[derive(Debug)]
-pub struct TestStoredModel<'base, T: TestSetup> {
-    pub store: &'base TestStore,
-    pub model: T,
-}
-
-impl Deref for TestStore {
-    type Target = LocalFileStore;
+impl<T: Store> Deref for StoreScaffold<T> {
+    type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.store
     }
 }
 
-impl Drop for TestStore {
+impl<T: Store> Drop for StoreScaffold<T> {
     fn drop(&mut self) {
-        fs::remove_dir_all(self.store.get_directory()).expect("Failed to teardown store.");
+        self.store.wipe().unwrap();
     }
 }
 
-impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
-    fn drop(&mut self) {
-        self.model
-            .delete(self.store)
-            .expect("Failed to teardown model.");
+impl<T: Store> StoreScaffold<T> {
+    pub fn save_model(&self, model: &Model) -> Result<()> {
+        match model {
+            Model::Pod(pod) => Ok(self.store.save_pod(pod)?),
+            Model::PodJob(pod_job) => Ok(self.store.save_pod_job(pod_job)?),
+        }
+    }
+
+    pub fn load_model(&self, model_id: &ModelID, model_type: &ModelType) -> Result<Model> {
+        match model_type {
+            ModelType::Pod => Ok(Model::Pod(self.store.load_pod(model_id)?)),
+            ModelType::PodJob => Ok(Model::PodJob(self.store.load_pod_job(model_id)?)),
+        }
+    }
+
+    pub fn list_model(&self, model_type: &ModelType) -> Result<Vec<ModelInfo>> {
+        match model_type {
+            ModelType::Pod => Ok(self.store.list_pod()?),
+            ModelType::PodJob => Ok(self.store.list_pod_job()?),
+        }
+    }
+
+    pub fn delete_item(&self, model_id: &ModelID, model_type: &ModelType) -> Result<()> {
+        match model_type {
+            ModelType::Pod => Ok(self.store.delete_pod(model_id)?),
+            ModelType::PodJob => Ok(self.store.delete_pod_job(model_id)?),
+        }
+    }
+
+    pub fn delete_item_annotation(
+        &self,
+        name: &str,
+        version: &str,
+        model_type: &ModelType,
+    ) -> Result<()> {
+        match model_type {
+            ModelType::Pod => Ok(self.store.delete_annotation::<Pod>(name, version)?),
+            ModelType::PodJob => Ok(self.store.delete_annotation::<PodJob>(name, version)?),
+        }
     }
 }
 
-pub trait TestSetup {
-    type Target;
-    fn save(&self, store: &LocalFileStore) -> Result<()>;
-    fn delete(&self, store: &LocalFileStore) -> Result<()>;
-    fn load(&self, store: &LocalFileStore) -> Result<Self::Target>;
-    fn get_annotation(&self) -> Option<&Annotation>;
-    fn get_hash(&self) -> &str;
+#[derive(PartialEq, Debug)]
+pub enum Model {
+    Pod(Pod),
+    PodJob(PodJob),
 }
 
-impl TestSetup for Pod {
-    type Target = Self;
-    fn save(&self, store: &LocalFileStore) -> Result<()> {
-        Ok(store.save_pod(self)?)
+impl Model {
+    ///
+    /// # Panics
+    /// Will panic if annotation is empty
+    pub fn get_annotation(&self) -> &Annotation {
+        match self {
+            Self::Pod(pod) => pod.annotation.as_ref().expect("Pod has empty annotation"),
+            Self::PodJob(pod_job) => pod_job
+                .annotation
+                .as_ref()
+                .expect("Pod job has empty annotation"),
+        }
     }
-    fn delete(&self, store: &LocalFileStore) -> Result<()> {
-        Ok(store.delete_pod(&ModelID::Hash(self.hash.clone()))?)
+
+    pub fn get_hash(&self) -> &str {
+        match self {
+            Self::Pod(pod) => &pod.hash,
+            Self::PodJob(pod_job) => &pod_job.hash,
+        }
     }
-    fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
-        let annotation = self.annotation.as_ref().expect("Annotation missing.");
-        Ok(store.load_pod(&ModelID::Annotation(
-            annotation.name.clone(),
-            annotation.version.clone(),
-        ))?)
+
+    pub fn set_annotation(&mut self, annotation: Option<Annotation>) {
+        match self {
+            Self::Pod(pod) => pod.annotation = annotation,
+            Self::PodJob(pod_job) => pod_job.annotation = annotation,
+        }
     }
-    fn get_annotation(&self) -> Option<&Annotation> {
-        self.annotation.as_ref()
+}
+
+impl ModelType {
+    pub fn get_model<T: Store>(&self, store: &StoreScaffold<T>) -> Result<Model> {
+        match self {
+            Self::Pod => Ok(Model::Pod(pod_style()?)),
+            Self::PodJob => Ok(Model::PodJob(pod_job_style(&store.store)?)),
+        }
     }
-    fn get_hash(&self) -> &str {
-        &self.hash
-    }
+}
+
+pub enum ModelType {
+    Pod,
+    PodJob,
 }

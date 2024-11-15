@@ -150,7 +150,7 @@ pub struct PodJob {
     /// Computed by coverting it to yaml then hash
     pub hash: String,
     /// Details about the pod from which the pod job was created from
-    pub pod: Pod,
+    pub pod_hash: String,
     /// String is the key, variable, input is the actual path to look up
     input_volume_map: BTreeMap<String, Input>,
     output_volume_map: BTreeMap<String, PathBuf>,
@@ -166,7 +166,7 @@ impl PodJob {
     /// Will error out if fail to cover to yaml and hash
     pub fn new(
         annotation: Option<Annotation>,
-        pod: Pod,
+        pod_hash: String,
         input_volume_map: BTreeMap<String, Input>,
         output_volume_map: BTreeMap<String, PathBuf>,
         cpu_limit: f32,
@@ -176,7 +176,7 @@ impl PodJob {
         let pod_job_no_hash = Self {
             annotation,
             hash: String::new(),
-            pod,
+            pod_hash,
             input_volume_map,
             output_volume_map,
             cpu_limit,

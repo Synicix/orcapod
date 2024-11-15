@@ -104,6 +104,12 @@ pub trait Store {
     /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
     /// and `version`.
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
+
+    /// Will delete everything store
+    ///
+    /// # Errors
+    /// Will return orca error if failed to tear down store
+    fn wipe(&self) -> Result<()>;
 }
 /// Store implementation on a local filesystem.
 pub mod filestore;
