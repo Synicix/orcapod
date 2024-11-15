@@ -203,6 +203,7 @@ pub struct Annotation {
     /// A long form description.
     pub description: String,
 }
+
 /// Specification for GPU requirements in computation.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
@@ -213,6 +214,7 @@ pub struct GPURequirement {
     /// Number of GPU cards required.
     pub count: u16,
 }
+
 /// GPU model specification.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {

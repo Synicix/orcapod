@@ -108,10 +108,7 @@ impl LocalFileStore {
             directory: directory.as_ref().into(),
         }
     }
-    /// Get the directory where store is located.
-    pub fn get_directory(&self) -> &Path {
-        &self.directory
-    }
+
     /// Relative path where model specification is stored within the model directory.
     pub const SPEC_RELPATH: &str = "spec.yaml";
     /// Relative path where model annotation is stored within the model directory.
