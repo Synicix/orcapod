@@ -11,7 +11,6 @@ use orcapod::{
     model::{Annotation, Input, InputData, Pod, PodJob, RetryPolicy, StreamInfo},
     store::{ModelID, ModelInfo, Store},
 };
-use rand::Rng;
 use std::{collections::BTreeMap, io::Cursor, ops::Deref, path::PathBuf};
 
 // --- fixtures ---
@@ -58,17 +57,12 @@ pub fn pod_style() -> Result<Pod> {
 
 static IMAGE_DIM: u32 = 512;
 
-fn pod_job_style<T: Store>(store: &T) -> Result<PodJob> {
+pub fn pod_job_style<T: Store>(store: &T) -> Result<PodJob> {
     // Generate random uniform image
     let mut img_buffer = RgbImage::new(IMAGE_DIM, IMAGE_DIM);
-    let mut rng = rand::thread_rng();
 
     for (_, _, pixel) in img_buffer.enumerate_pixels_mut() {
-        *pixel = image::Rgb([
-            rng.gen_range(0..255),
-            rng.gen_range(0..255),
-            rng.gen_range(0..255),
-        ]);
+        *pixel = image::Rgb([255, 255, 255]);
     }
 
     // Covert it to rawbytes
