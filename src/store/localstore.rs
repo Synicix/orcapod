@@ -344,9 +344,9 @@ impl ModelStore for LocalStore {
         let pod_hash_value = pod_job_yaml_mapping.get("pod_hash").ok_or_else(|| {
             OrcaError::from(Kind::MissingPodHashFromPodJobYaml(pod_job_yaml.clone()))
         })?;
-        let pod_hash = pod_hash_value.as_str().ok_or_else(|| {
-            OrcaError::from(Kind::FailedToCovertValueToString(pod_hash_value.clone()))
-        })?;
+        let pod_hash = pod_hash_value
+            .as_str()
+            .ok_or_else(|| OrcaError::from(Kind::FailedToCovertValueToString))?;
 
         // Get the pod
         pod_job.pod = self.load_pod(&ModelID::Hash(pod_hash.to_owned()))?;

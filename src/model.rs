@@ -117,6 +117,7 @@ pub struct InputStoreMapping {
 }
 
 impl InputStoreMapping {
+    /// Construct a new ``InputStoreMapping`` with empty content check sum
     pub fn new(path: impl AsRef<Path>, store_name: Option<String>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
@@ -141,9 +142,12 @@ pub enum Input {
     Folder(InputStoreMapping),
 }
 
+/// Mapping for output volume mount from container -> File Store
 #[derive(Serialize, Deserialize, PartialEq, Eq, Default, Debug)]
 pub struct OutputStoreMapping {
+    /// Where to store the results and in which store
     pub path: PathBuf,
+    /// The name of the store
     pub store_name: Option<String>,
 }
 /// Struct to represent ``PodJob``

@@ -42,7 +42,7 @@ pub(crate) enum Kind {
     InvalidStoreName(String),
     NoStorePointersFound,
     MissingPodHashFromPodJobYaml(String),
-    FailedToCovertValueToString(Value),
+    FailedToCovertValueToString,
 }
 
 /// A stable error API interface.
@@ -93,8 +93,8 @@ impl Display for OrcaError {
             Kind::MissingPodHashFromPodJobYaml(yaml) => {
                 write!(f, "Missing pod_hash from Pod Job yaml: {yaml}")
             }
-            Kind::FailedToCovertValueToString(value) => {
-                write!(f, "Failed to covert value {value:?} to string")
+            Kind::FailedToCovertValueToString => {
+                write!(f, "Failed to covert value to string")
             }
         }
     }
