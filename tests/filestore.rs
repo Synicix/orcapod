@@ -8,7 +8,7 @@ use std::path::Path;
 
 use anyhow::{Ok, Result};
 use fixture::{Model, ModelType, StoreScaffold};
-use orcapod::store::{filestore::LocalFileStore, ModelID};
+use orcapod::store::{localstore::LocalStore, ModelID};
 use tempfile::tempdir;
 
 // Store clean up test
@@ -81,10 +81,10 @@ fn test_delete_pod_job_annotation() -> Result<()> {
 fn scaffold_store_with_model(
     model_type: &ModelType,
     store_dir: impl AsRef<Path>,
-) -> Result<(Model, StoreScaffold<LocalFileStore>)> {
+) -> Result<(Model, StoreScaffold<LocalStore>)> {
     // Upon going out of scope, the scaffold should wipe the directory it used for local file store
     let store = StoreScaffold {
-        store: LocalFileStore::new(store_dir),
+        store: LocalStore::new(store_dir),
     };
 
     // Test saving
@@ -122,6 +122,17 @@ fn test_load_model(model_type: &ModelType) -> Result<()> {
     let temp_dir = tempdir()?.into_path();
     let (mut model, store) = scaffold_store_with_model(model_type, temp_dir)?;
 
+    model.set_sub_models_annotation_to_none()?;
+
+    let loaded_model = store.load_model(
+        &ModelID::Annotation(
+            model.get_annotation().name.clone(),
+            model.get_annotation().version.clone(),
+        ),
+        model_type,
+    )?;
+
+    println!("{model:?}\n{loaded_model:?}");
     // By name and version
     assert!(
         model

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     error::Result,
-    model::{Pod, PodJob},
+    model::{Pod, PodJob, StorePointer},
 };
 
 /// Options for identifying a model.
@@ -25,27 +25,17 @@ pub struct ModelInfo {
 }
 
 /// Standard behavior of any store backend supported.
-pub trait Store {
-    /// Computes the checksum for a given file or folder using merkle tree
-    ///
-    /// # Errors
-    /// Return ``merkle_hash`` errors
-    fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String>;
-
-    /// Function to read file into memory
+pub trait ModelStore: Sized {
+    /// How to delete only annotation, which will leave the item untouched
+    /// How to explicitly delete an annotation.
     ///
     /// # Errors
     ///
-    /// Will error out with standard ``io::errors``
-    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>>;
+    /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
+    /// and `version`.
+    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
 
-    /// Save file to local file store, will error out if file already exist
-    ///
-    /// # Errors
-    /// Will error out with standard ``io::errors``
-    fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()>;
-
-    /// How a pod is stored.
+    /// How a pod is stored
     ///
     /// # Errors
     ///
@@ -96,14 +86,16 @@ pub trait Store {
     /// Will return error if failed to delete the pod
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
 
-    /// How to delete only annotation, which will leave the item untouched
-    /// How to explicitly delete an annotation.
     ///
     /// # Errors
+    /// Will with orca error if fail to save
+    fn save_store_pointer(&self, store_pointer: &StorePointer) -> Result<()>;
+
+    /// Load the latest store pointer
     ///
-    /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
-    /// and `version`.
-    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
+    /// # Errors
+    /// Will return orca error if fail to load latest store pointer
+    fn load_store_pointer(&self) -> Result<StorePointer>;
 
     /// Will delete everything store
     ///
@@ -111,5 +103,37 @@ pub trait Store {
     /// Will return orca error if failed to tear down store
     fn wipe(&self) -> Result<()>;
 }
+
+/// Trait to be implemented by file stores
+pub trait FileStore: Sized {
+    ///
+    /// # Errors
+    /// Will return invalid uri if file store cannot be rebuilt given the uri
+    fn from_uri(uri: &str) -> Result<Self>;
+
+    /// Get the uri string to reconstruct the store later
+    ///
+    fn get_uri(&self) -> String;
+
+    /// Computes the checksum for a given file or folder using merkle tree
+    ///
+    /// # Errors
+    /// Return ``merkle_hash`` errors
+    fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String>;
+
+    /// Function to read file into memory
+    ///
+    /// # Errors
+    ///
+    /// Will error out with standard ``io::errors``
+    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>>;
+
+    /// Save file to local file store, will error out if file already exist
+    ///
+    /// # Errors
+    /// Will error out with standard ``io::errors``
+    fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()>;
+}
+
 /// Store implementation on a local filesystem.
-pub mod filestore;
+pub mod localstore;

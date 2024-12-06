@@ -1,107 +1,71 @@
 use crate::{
-    error::Result,
-    store::Store,
+    error::{Kind, OrcaError, Result},
+    store::{localstore::LocalStore, FileStore},
     util::{get_type_name, hash},
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_yaml::{Mapping, Value};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    result,
 };
 
-/// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
-///
-/// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
-pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
-    let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
-    let mut yaml = serde_yaml::to_string(
-        &mapping
-            .into_iter()
-            .filter(|(k, _)| k != "annotation" && k != "hash")
-            .collect::<BTreeMap<_, _>>(),
-    )?; // skip fields
+/// Error out with ``serde_yaml`` seralization error if something goes wrong
+pub fn to_yaml<T: Serialize>(item: &T) -> Result<String> {
+    let mut yaml = serde_yaml::to_string(item)?;
     yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>())); // replace class at top
-
     Ok(yaml)
 }
-/// Instantiates a model from from yaml content and its unique hash.
-///
-/// # Errors
-///
-/// Will return `Err` if there is an issue converting YAML files for spec+annotation into a model
-/// instance.
-pub fn from_yaml<T: DeserializeOwned>(
-    hash: &str,
-    spec_yaml: &str,
-    annotation_yaml: Option<&str>,
-) -> Result<T> {
-    let mut spec: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
-    spec.insert("hash".to_owned(), Value::from(hash));
-    if let Some(resolved_annotation_yaml) = annotation_yaml {
-        let annotation: Mapping = serde_yaml::from_str(resolved_annotation_yaml)?;
-        spec.insert("annotation".to_owned(), Value::from(annotation));
-    }
 
-    Ok(serde_yaml::from_str(&serde_yaml::to_string(&spec)?)?)
-}
-
-// --- core model structs ---
-
-/// Struct to store the path of where to look in the storage along with the checksum for hashing
-/// and/or file integrity check
+/// Model object that contains a ``BTreeMap``that maps store names to the actual URI use to reconstruct the stores
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct InputData {
-    path: PathBuf,
-    content_check_sum: String,
+pub struct StorePointer {
+    /// Version tag to uniquely identify
+    pub version: String,
+    /// Where the map is (Store Name, URI)
+    pub stores: BTreeMap<String, String>,
 }
 
-impl InputData {
-    /// Upon creation, verify that the file is valid in the store and compute the checksum
-    ///
-    /// # Errors
-    /// Error out with ``std::io`` if something goes wrong
-    pub fn new<T: Store>(path: impl AsRef<Path>, store: &T) -> Result<Self> {
-        Ok(Self {
-            path: path.as_ref().to_path_buf(),
-            content_check_sum: store.compute_checksum_for_file_or_dir(path)?,
-        })
+impl StorePointer {
+    fn get_store(&self, store_name: &str) -> Result<impl FileStore> {
+        // Load the yaml into a Btreemap, pull out the class, then build the store
+
+        let store_uri = self
+            .stores
+            .get(store_name)
+            .ok_or_else(|| OrcaError::from(Kind::InvalidStoreName(store_name.to_owned())))?;
+
+        let storage_class_name = store_uri.split("::").collect::<Vec<&str>>()[0];
+
+        match storage_class_name {
+            "LocalStore" => Ok(LocalStore::from_uri(store_uri)?),
+            _ => Err(OrcaError::from(Kind::UnsupportedFileStorage(
+                storage_class_name.to_owned(),
+            ))),
+        }
     }
-}
-
-/// Describe the input with two current options
-/// Singular file,
-/// or a collection of files that will be map
-///
-/// NOTE: All files are to be uploaded to the apporiate store ahead of usage
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub enum Input {
-    /// Single File to be used as input that is stored in the store
-    File(InputData),
-    /// Collection of files to be used as input (assume to be same type to match against regex)
-    FileCollection(Vec<InputData>),
-    /// For folder mounting
-    Folder(InputData),
 }
 
 /// A reusable, containerized computational unit.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
+    #[serde(skip)]
     pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
+    #[serde(skip)]
     pub hash: String,
-    source_commit_url: String,
-    image: String,
     command: String,
+    image: String,
     input_stream_map: BTreeMap<String, StreamInfo>,
     output_dir: PathBuf,
     output_stream_map: BTreeMap<String, StreamInfo>,
     recommended_cpus: f32,
     recommended_memory: u64,
     required_gpu: Option<GPURequirement>,
+    source_commit_url: String,
 }
 
 impl Pod {
@@ -115,6 +79,7 @@ impl Pod {
         source_commit_url: String,
         image: String,
         command: String,
+        // Defined as Key and (Pathbuf, and Regex restriction)
         input_stream_map: BTreeMap<String, StreamInfo>,
         output_dir: PathBuf,
         output_stream_map: BTreeMap<String, StreamInfo>,
@@ -136,24 +101,66 @@ impl Pod {
             required_gpu,
         };
         Ok(Self {
-            hash: hash(&to_yaml(&pod_no_hash)?),
+            hash: hash(to_yaml(&pod_no_hash)?),
             ..pod_no_hash
         })
     }
 }
 
+/// Struct to store the path of where to look in the storage along with the checksum for hashing
+/// and/or file integrity check
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct InputStoreMapping {
+    path: PathBuf,
+    store_name: Option<String>,
+    content_check_sum: String,
+}
+
+impl InputStoreMapping {
+    pub fn new(path: impl AsRef<Path>, store_name: Option<String>) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+            store_name,
+            content_check_sum: String::new(),
+        }
+    }
+}
+
+/// Describe the input with two current options
+/// Singular file,
+/// or a collection of files that will be map
+///
+/// NOTE: All files are to be uploaded to the apporiate store ahead of usage
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub enum Input {
+    /// Single File to be used as input that is stored in the store
+    File(InputStoreMapping),
+    /// Collection of files to be used as input (assume to be same type to match against regex)
+    FileCollection(Vec<InputStoreMapping>),
+    /// For folder mounting
+    Folder(InputStoreMapping),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Default, Debug)]
+pub struct OutputStoreMapping {
+    pub path: PathBuf,
+    pub store_name: Option<String>,
+}
 /// Struct to represent ``PodJob``
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Deserialize, PartialEq, Default, Debug)]
 pub struct PodJob {
     /// Optional annotation for pod job
+    #[serde(skip)]
     pub annotation: Option<Annotation>,
     /// Computed by coverting it to yaml then hash
+    #[serde(skip)]
+    pub pod: Pod,
+    /// Hash of the yaml seraliziation of pod job
+    #[serde(skip)]
     pub hash: String,
-    /// Details about the pod from which the pod job was created from
-    pub pod_hash: String,
     /// String is the key, variable, input is the actual path to look up
-    input_volume_map: BTreeMap<String, Input>,
-    output_volume_map: BTreeMap<String, PathBuf>,
+    input_store_mapping: BTreeMap<String, Input>,
+    output_store_mapping: OutputStoreMapping,
     cpu_limit: f32, // Num of cpu to limit the pod from
     mem_limit: u64, // Bytes to limit memory
     retry_policy: RetryPolicy,
@@ -166,9 +173,9 @@ impl PodJob {
     /// Will error out if fail to cover to yaml and hash
     pub fn new(
         annotation: Option<Annotation>,
-        pod_hash: String,
-        input_volume_map: BTreeMap<String, Input>,
-        output_volume_map: BTreeMap<String, PathBuf>,
+        pod: Pod,
+        input_store_mapping: BTreeMap<String, Input>,
+        output_store_mapping: OutputStoreMapping,
         cpu_limit: f32,
         mem_limit: u64,
         retry_policy: RetryPolicy,
@@ -176,9 +183,9 @@ impl PodJob {
         let pod_job_no_hash = Self {
             annotation,
             hash: String::new(),
-            pod_hash,
-            input_volume_map,
-            output_volume_map,
+            pod,
+            input_store_mapping,
+            output_store_mapping,
             cpu_limit,
             mem_limit,
             retry_policy,
@@ -191,10 +198,27 @@ impl PodJob {
     }
 }
 
+impl Serialize for PodJob {
+    fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("PodJob", 6)?;
+        state.serialize_field("cpu_limit", &self.cpu_limit)?;
+        state.serialize_field("input_store_mapping", &self.input_store_mapping)?;
+        state.serialize_field("mem_limit", &self.mem_limit)?;
+        state.serialize_field("output_store_mapping", &self.output_store_mapping)?;
+        state.serialize_field("pod_hash", &self.pod.hash)?;
+        state.serialize_field("retry_policy", &self.retry_policy)?;
+
+        state.end()
+    }
+}
+
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Annotation {
     /// A unique name.
     pub name: String,
@@ -229,7 +253,9 @@ pub enum GPUModel {
 pub struct StreamInfo {
     /// Path to stream file.
     pub path: PathBuf,
-    /// Naming pattern for the stream.
+    /// Regex restriction of input file
+    /// For file, it can be i.e  \N+.png
+    /// For folders it must end in a slash i.e. \N+\/
     pub match_pattern: String,
 }
 
@@ -240,4 +266,10 @@ pub enum RetryPolicy {
     NoRetry,
     /// Will allow n number of failures within a time window of t seconds
     RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self::NoRetry
+    }
 }

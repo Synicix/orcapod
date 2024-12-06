@@ -2,7 +2,7 @@ use colored::Colorize;
 use glob;
 use merkle_hash::error::IndexingError;
 use regex;
-use serde_yaml;
+use serde_yaml::{self, Value};
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},
@@ -37,6 +37,12 @@ pub(crate) enum Kind {
     IndexingError(IndexingError),
     /// Wrapper around utf8 encoding error
     FromUtf8Error(FromUtf8Error),
+    UnsupportedFileStorage(String),
+    InvalidURIForFileStore(String, String),
+    InvalidStoreName(String),
+    NoStorePointersFound,
+    MissingPodHashFromPodJobYaml(String),
+    FailedToCovertValueToString(Value),
 }
 
 /// A stable error API interface.
@@ -67,6 +73,29 @@ impl Display for OrcaError {
             Kind::IoError(error) => write!(f, "{error}"),
             Kind::IndexingError(error) => write!(f, "{error}"),
             Kind::FromUtf8Error(error) => write!(f, "{error}"),
+            Kind::UnsupportedFileStorage(file_store_type) => {
+                write!(f, "Unsupported file store: {file_store_type}")
+            }
+            Kind::InvalidURIForFileStore(error, uri) => {
+                write!(
+                    f,
+                    "Fail to initialize file store with uri {uri} with error {error}"
+                )
+            }
+            Kind::InvalidStoreName(store_name) => {
+                write!(f, "Invalid store name: {store_name}")
+            }
+            Kind::NoStorePointersFound => write!(
+                f,
+                "No Store Pointers available. Perhaps define one first as save it"
+            ),
+
+            Kind::MissingPodHashFromPodJobYaml(yaml) => {
+                write!(f, "Missing pod_hash from Pod Job yaml: {yaml}")
+            }
+            Kind::FailedToCovertValueToString(value) => {
+                write!(f, "Failed to covert value {value:?} to string")
+            }
         }
     }
 }

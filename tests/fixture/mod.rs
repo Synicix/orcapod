@@ -8,8 +8,11 @@
 use anyhow::Result;
 use image::{DynamicImage, ImageFormat, RgbImage};
 use orcapod::{
-    model::{Annotation, Input, InputData, Pod, PodJob, RetryPolicy, StreamInfo},
-    store::{ModelID, ModelInfo, Store},
+    model::{
+        Annotation, Input, InputStoreMapping, OutputStoreMapping, Pod, PodJob, RetryPolicy,
+        StreamInfo,
+    },
+    store::{FileStore, ModelID, ModelInfo, ModelStore},
 };
 use std::{collections::BTreeMap, io::Cursor, ops::Deref, path::PathBuf};
 
@@ -45,8 +48,8 @@ pub fn pod_style() -> Result<Pod> {
         BTreeMap::from([(
             "styled".to_owned(),
             StreamInfo {
-                path: PathBuf::from("./styled.png"),
-                match_pattern: "./styled.png".to_owned(),
+                path: PathBuf::from("styled.png"),
+                match_pattern: "styled.png".to_owned(),
             },
         )]),
         0.25,                // 250 millicores as frac cores
@@ -57,7 +60,7 @@ pub fn pod_style() -> Result<Pod> {
 
 static IMAGE_DIM: u32 = 512;
 
-pub fn pod_job_style<T: Store>(store: &T) -> Result<PodJob> {
+pub fn pod_job_style<T: FileStore>(store: &T) -> Result<PodJob> {
     // Generate random uniform image
     let mut img_buffer = RgbImage::new(IMAGE_DIM, IMAGE_DIM);
 
@@ -79,19 +82,18 @@ pub fn pod_job_style<T: Store>(store: &T) -> Result<PodJob> {
 
     input_volume_map.insert(
         "style".to_owned(),
-        Input::File(InputData::new("style.png", store)?),
+        Input::File(InputStoreMapping::new("style.png", None)),
     );
     input_volume_map.insert(
         "image".to_owned(),
-        Input::File(InputData::new("image.png", store)?),
+        Input::File(InputStoreMapping::new("image.png", None)),
     );
 
     //
-    let mut output_volume_map = BTreeMap::new();
-    output_volume_map.insert(
-        "stylized_image".to_owned(),
-        PathBuf::from("stylized_image.png"),
-    );
+    let output_store_mapping = OutputStoreMapping {
+        path: "stylized_image".into(),
+        store_name: None,
+    };
 
     Ok(PodJob::new(
         Some(Annotation {
@@ -99,9 +101,9 @@ pub fn pod_job_style<T: Store>(store: &T) -> Result<PodJob> {
             description: "This is an example pod job.".to_owned(),
             version: "0.67.0".to_owned(),
         }),
-        pod_style()?.hash,
+        pod_style()?,
         input_volume_map,
-        output_volume_map,
+        output_store_mapping,
         2.0_f32,
         (4_u64) * (1 << 30),
         RetryPolicy::NoRetry,
@@ -110,24 +112,24 @@ pub fn pod_job_style<T: Store>(store: &T) -> Result<PodJob> {
 
 // --- util ---
 #[derive(Debug)]
-pub struct StoreScaffold<T: Store> {
+pub struct StoreScaffold<T: ModelStore> {
     pub store: T,
 }
 
-impl<T: Store> Deref for StoreScaffold<T> {
+impl<T: ModelStore> Deref for StoreScaffold<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.store
     }
 }
 
-impl<T: Store> Drop for StoreScaffold<T> {
+impl<T: ModelStore> Drop for StoreScaffold<T> {
     fn drop(&mut self) {
         self.store.wipe().unwrap();
     }
 }
 
-impl<T: Store> StoreScaffold<T> {
+impl<T: ModelStore> StoreScaffold<T> {
     pub fn save_model(&self, model: &Model) -> Result<()> {
         match model {
             Model::Pod(pod) => Ok(self.store.save_pod(pod)?),
@@ -202,10 +204,20 @@ impl Model {
             Self::PodJob(pod_job) => pod_job.annotation = annotation,
         }
     }
+
+    pub fn set_sub_models_annotation_to_none(&mut self) -> Result<()> {
+        match self {
+            Self::Pod(_) => Ok(()),
+            Self::PodJob(pod_job) => {
+                pod_job.pod.annotation = None;
+                Ok(())
+            }
+        }
+    }
 }
 
 impl ModelType {
-    pub fn get_model<T: Store>(&self, store: &StoreScaffold<T>) -> Result<Model> {
+    pub fn get_model<T: ModelStore + FileStore>(&self, store: &StoreScaffold<T>) -> Result<Model> {
         match self {
             Self::Pod => Ok(Model::Pod(pod_style()?)),
             Self::PodJob => Ok(Model::PodJob(pod_job_style(&store.store)?)),

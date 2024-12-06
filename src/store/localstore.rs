@@ -1,107 +1,35 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{from_yaml, to_yaml, Annotation, Pod, PodJob},
-    store::{ModelID, ModelInfo, Store},
+    model::{to_yaml, Annotation, Pod, PodJob},
+    store::{ModelID, ModelInfo, ModelStore},
     util::get_type_name,
 };
 use colored::Colorize;
+use glob::glob;
 use merkle_hash::{Algorithm, Encodable, MerkleTree};
 use regex::Regex;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_yaml::Value;
 use std::{
-    collections::HashSet,
-    fs,
+    collections::{BTreeMap, HashSet},
+    fs::{self},
     path::{Path, PathBuf},
 };
 
+use super::{FileStore, StorePointer};
+
 static FILE_STORE_FOLDER_NAME: &str = "file_store";
+/// Relative path where model specification is stored within the model directory.
+static SPEC_FILENAME: &str = "spec.yaml";
 
 /// Support for a storage backend on a local filesystem directory.
-#[derive(Debug)]
-pub struct LocalFileStore {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LocalStore {
     /// A local path to a directory where store will be located.
     directory: PathBuf,
 }
 
-impl Store for LocalFileStore {
-    fn save_pod(&self, pod: &Pod) -> Result<()> {
-        self.save_model(pod, &pod.hash, &pod.annotation)
-    }
-
-    fn load_pod(&self, model_id: &ModelID) -> Result<Pod> {
-        self.load_model(model_id)
-    }
-
-    fn list_pod(&self) -> Result<Vec<ModelInfo>> {
-        self.list_model::<Pod>()
-    }
-
-    fn delete_pod(&self, model_id: &ModelID) -> Result<()> {
-        self.delete_model::<Pod>(model_id)
-    }
-
-    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
-        let hash = self.lookup_hash::<T>(name, version)?;
-
-        let annotation_file =
-            self.make_hash_rel_path::<T>(&hash, &Self::make_annotation_relpath(name, version));
-        fs::remove_file(&annotation_file)?;
-
-        Ok(())
-    }
-
-    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
-        self.save_model(pod_job, &pod_job.hash, &pod_job.annotation)
-    }
-
-    fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob> {
-        self.load_model(model_id)
-    }
-
-    fn list_pod_job(&self) -> Result<Vec<ModelInfo>> {
-        self.list_model::<PodJob>()
-    }
-
-    fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
-        self.delete_model::<PodJob>(model_id)
-    }
-
-    fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String> {
-        Ok(MerkleTree::builder(
-            self.directory
-                .join(FILE_STORE_FOLDER_NAME)
-                .join(path)
-                .to_string_lossy(),
-        )
-        .algorithm(Algorithm::Blake3)
-        .hash_names(true)
-        .build()?
-        .root
-        .item
-        .hash
-        .to_hex_string())
-    }
-
-    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
-        Ok(fs::read(
-            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
-        )?)
-    }
-
-    fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()> {
-        Self::save_file_internal(
-            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
-            content,
-            true,
-        )
-    }
-
-    fn wipe(&self) -> Result<()> {
-        Ok(fs::remove_dir_all(&self.directory)?)
-    }
-}
-
-impl LocalFileStore {
+impl LocalStore {
     /// Construct a local file store instance in a specific directory.
     pub fn new(directory: impl AsRef<Path>) -> Self {
         Self {
@@ -109,8 +37,6 @@ impl LocalFileStore {
         }
     }
 
-    /// Relative path where model specification is stored within the model directory.
-    pub const SPEC_RELPATH: &str = "spec.yaml";
     /// Relative path where model annotation is stored within the model directory.
     pub fn make_annotation_relpath(name: &str, version: &str) -> PathBuf {
         PathBuf::from(format!("annotation/{name}-{version}.yaml"))
@@ -119,7 +45,7 @@ impl LocalFileStore {
     /// Makes the path to model type
     pub fn make_model_path<T>(&self) -> PathBuf {
         PathBuf::from(format!(
-            "{}/{}",
+            "{}/model/{}",
             self.directory.to_string_lossy(),
             get_type_name::<T>()
         ))
@@ -225,31 +151,37 @@ impl LocalFileStore {
 
         // Save the pod and skip if it already exist, for the case of many annotation to a single pod
         Self::save_file_internal(
-            self.make_hash_rel_path::<T>(hash, Self::SPEC_RELPATH),
-            &to_yaml(model)?,
+            self.make_hash_rel_path::<T>(hash, SPEC_FILENAME),
+            to_yaml(model)?,
             false,
         )?;
 
         Ok(())
     }
 
-    fn load_model<T: DeserializeOwned>(&self, model_id: &ModelID) -> Result<T> {
+    fn load_model<T: DeserializeOwned>(&self, hash: &str) -> Result<T> {
+        Ok(serde_yaml::from_str(&fs::read_to_string(
+            self.make_hash_rel_path::<T>(hash, SPEC_FILENAME),
+        )?)?)
+    }
+
+    fn get_hash_and_annotation<T>(
+        &self,
+        model_id: &ModelID,
+    ) -> Result<(String, Option<Annotation>)> {
         match model_id {
-            ModelID::Hash(hash) => from_yaml(
-                hash,
-                &fs::read_to_string(self.make_hash_rel_path::<T>(hash, Self::SPEC_RELPATH))?,
-                None,
-            ),
+            ModelID::Hash(hash) => Ok((hash.clone(), None)),
             ModelID::Annotation(name, version) => {
+                // Deal with the hash
                 let hash = self.lookup_hash::<T>(name, version)?;
-                from_yaml(
-                    &hash,
-                    &fs::read_to_string(self.make_hash_rel_path::<T>(&hash, Self::SPEC_RELPATH))?,
-                    Some(&fs::read_to_string(self.make_hash_rel_path::<T>(
+
+                // Deal with the annotation
+                let annotation: Annotation =
+                    serde_yaml::from_str(&fs::read_to_string(self.make_hash_rel_path::<T>(
                         &hash,
-                        &Self::make_annotation_relpath(name, version),
-                    ))?),
-                )
+                        Self::make_annotation_relpath(name, version),
+                    ))?)?;
+                Ok((hash, Some(annotation)))
             }
         }
     }
@@ -303,5 +235,154 @@ impl LocalFileStore {
         fs::remove_dir_all(spec_dir)?;
 
         Ok(())
+    }
+}
+
+impl FileStore for LocalStore {
+    fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String> {
+        Ok(
+            MerkleTree::builder(self.directory.join(path).to_string_lossy())
+                .algorithm(Algorithm::Blake3)
+                .hash_names(true)
+                .build()?
+                .root
+                .item
+                .hash
+                .to_hex_string(),
+        )
+    }
+
+    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
+        Ok(fs::read(
+            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
+        )?)
+    }
+
+    fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()> {
+        Self::save_file_internal(
+            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
+            content,
+            true,
+        )
+    }
+
+    fn from_uri(uri: &str) -> Result<Self> {
+        // Remove the class name from the start
+        let directory = uri.split("::").collect::<Vec<&str>>()[1];
+        if PathBuf::from(directory).exists() {
+            // uri is not valid
+            return Err(OrcaError::from(Kind::InvalidURIForFileStore(
+                "Directory doesn't exist or not accessible".to_owned(),
+                directory.to_owned(),
+            )));
+        }
+
+        Ok(Self {
+            directory: directory.into(),
+        })
+    }
+
+    fn get_uri(&self) -> String {
+        let mut uri = String::from("LocalStore");
+        uri.push_str(&self.directory.to_string_lossy());
+        uri
+    }
+}
+
+impl ModelStore for LocalStore {
+    fn save_pod(&self, pod: &Pod) -> Result<()> {
+        self.save_model(pod, &pod.hash, &pod.annotation)
+    }
+
+    fn load_pod(&self, model_id: &ModelID) -> Result<Pod> {
+        let (hash, annotation) = self.get_hash_and_annotation::<Pod>(model_id)?;
+
+        let mut pod: Pod = self.load_model(&hash)?;
+        pod.hash = hash;
+        pod.annotation = annotation;
+
+        Ok(pod)
+    }
+
+    fn list_pod(&self) -> Result<Vec<ModelInfo>> {
+        self.list_model::<Pod>()
+    }
+
+    fn delete_pod(&self, model_id: &ModelID) -> Result<()> {
+        self.delete_model::<Pod>(model_id)
+    }
+
+    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
+        let hash = self.lookup_hash::<T>(name, version)?;
+
+        let annotation_file =
+            self.make_hash_rel_path::<T>(&hash, &Self::make_annotation_relpath(name, version));
+        fs::remove_file(&annotation_file)?;
+
+        Ok(())
+    }
+
+    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
+        self.save_pod(&pod_job.pod)?;
+        self.save_model(pod_job, &pod_job.hash, &pod_job.annotation)
+    }
+
+    fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob> {
+        let (hash, annotation) = self.get_hash_and_annotation::<PodJob>(model_id)?;
+
+        let mut pod_job = self.load_model::<PodJob>(&hash)?;
+        pod_job.hash = hash;
+        pod_job.annotation = annotation;
+        // Load annotation first if model_id was type annotation
+
+        // Deal with pod
+        let pod_job_yaml =
+            fs::read_to_string(self.make_hash_rel_path::<PodJob>(&pod_job.hash, SPEC_FILENAME))?;
+
+        // Pull out pod hash from yaml
+        let pod_job_yaml_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&pod_job_yaml)?;
+        let pod_hash_value = pod_job_yaml_mapping.get("pod_hash").ok_or_else(|| {
+            OrcaError::from(Kind::MissingPodHashFromPodJobYaml(pod_job_yaml.clone()))
+        })?;
+        let pod_hash = pod_hash_value.as_str().ok_or_else(|| {
+            OrcaError::from(Kind::FailedToCovertValueToString(pod_hash_value.clone()))
+        })?;
+
+        // Get the pod
+        pod_job.pod = self.load_pod(&ModelID::Hash(pod_hash.to_owned()))?;
+
+        Ok(pod_job)
+    }
+
+    fn list_pod_job(&self) -> Result<Vec<ModelInfo>> {
+        self.list_model::<PodJob>()
+    }
+
+    fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
+        self.delete_model::<PodJob>(model_id)
+    }
+
+    fn wipe(&self) -> Result<()> {
+        Ok(fs::remove_dir_all(&self.directory)?)
+    }
+
+    fn save_store_pointer(&self, store_pointer: &StorePointer) -> Result<()> {
+        self.save_model(store_pointer, &store_pointer.version, &None)
+    }
+
+    fn load_store_pointer(&self) -> Result<StorePointer> {
+        let paths = glob("store_pointer/*")?;
+        let mut store_pointer_versions = BTreeMap::new();
+
+        for path in paths {
+            store_pointer_versions.insert(String::from(path?.to_string_lossy()), ());
+        }
+
+        let (latest_version, ()) = store_pointer_versions
+            .last_key_value()
+            .ok_or_else(|| OrcaError::from(Kind::NoStorePointersFound))?;
+
+        // Load the latest store pointe
+        self.load_model::<StorePointer>(latest_version)
     }
 }
