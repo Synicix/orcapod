@@ -5,7 +5,7 @@ use regex;
 use serde_yaml::{self, Value};
 use std::{
     error::Error,
-    fmt::{self, Display, Formatter},
+    fmt::{self, write, Display, Formatter},
     io,
     path::PathBuf,
     result,
@@ -43,6 +43,8 @@ pub(crate) enum Kind {
     NoStorePointersFound,
     MissingPodHashFromPodJobYaml(String),
     FailedToCovertValueToString,
+    MultipleHashesForAnnotation(String, String),
+    InvalidIndex(usize),
 }
 
 /// A stable error API interface.
@@ -96,6 +98,8 @@ impl Display for OrcaError {
             Kind::FailedToCovertValueToString => {
                 write!(f, "Failed to covert value to string")
             }
+            Kind::MultipleHashesForAnnotation(name, version) => write!(f, "Found mutiple hashes when searching by annotation(name: {name}, version: {version}"),
+            Kind::InvalidIndex(idx) => write!(f, "Invalid idx {idx} while trying to access vector"),
         }
     }
 }

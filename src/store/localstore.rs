@@ -89,19 +89,29 @@ impl LocalStore {
         Ok(paths)
     }
 
-    fn lookup_hash<T>(&self, name: &str, version: &str) -> Result<String> {
-        let model_info = Self::find_annotation(
-            &self.make_hash_rel_path::<T>("*", &Self::make_annotation_relpath(name, version)),
-        )?
-        .next()
-        .ok_or_else(|| {
-            OrcaError::from(Kind::NoAnnotationFound(
-                get_type_name::<T>(),
-                name.to_owned(),
-                version.to_owned(),
-            ))
-        })??;
-        Ok(model_info.hash)
+    fn lookup_hash<T>(
+        &self,
+        name_match_pattern: &str,
+        version_match_pattern: &str,
+    ) -> Result<String> {
+        let matches = Self::find_annotation(&self.make_hash_rel_path::<T>(
+            "*",
+            &Self::make_annotation_relpath(name_match_pattern, version_match_pattern),
+        ))?
+        .map(|item| Ok::<String, OrcaError>(item?.hash))
+        .collect::<Result<Vec<String>>>()?;
+
+        if matches.len() != 1 {
+            return Err(OrcaError::from(Kind::MultipleHashesForAnnotation(
+                name_match_pattern.to_owned(),
+                version_match_pattern.to_owned(),
+            )));
+        }
+
+        matches
+            .first()
+            .ok_or_else(|| OrcaError::from(Kind::InvalidIndex(0)))
+            .cloned()
     }
 
     fn save_file_internal(
@@ -367,22 +377,51 @@ impl ModelStore for LocalStore {
     }
 
     fn save_store_pointer(&self, store_pointer: &StorePointer) -> Result<()> {
-        self.save_model(store_pointer, &store_pointer.version, &None)
+        self.save_model(
+            store_pointer,
+            &store_pointer.hash,
+            &Some(store_pointer.annotation.clone()),
+        )
     }
 
-    fn load_store_pointer(&self) -> Result<StorePointer> {
-        let paths = glob("store_pointer/*")?;
-        let mut store_pointer_versions = BTreeMap::new();
+    fn load_store_pointer(&self, store_name: &str) -> Result<StorePointer> {
+        // Search all the annotations in store_pointer to
 
-        for path in paths {
-            store_pointer_versions.insert(String::from(path?.to_string_lossy()), ());
-        }
+        let glob_pattern = self
+            .make_model_path::<StorePointer>()
+            .join("*")
+            .join("annotations")
+            .join(format!("{store_name}-*.yaml"));
+        let mut model_infos =
+            Self::find_annotation(&glob_pattern)?.collect::<Result<Vec<ModelInfo>>>()?;
 
-        let (latest_version, ()) = store_pointer_versions
-            .last_key_value()
-            .ok_or_else(|| OrcaError::from(Kind::NoStorePointersFound))?;
+        // Sort the versions in ascending order
+        model_infos.sort_by(|a, b| a.version.cmp(&b.version));
 
-        // Load the latest store pointe
-        self.load_model::<StorePointer>(latest_version)
+        // Get the lastest version
+        let latest_model_info = model_infos.last().ok_or_else(|| {
+            OrcaError::from(Kind::NoAnnotationFound(
+                store_name.to_owned(),
+                "*".to_owned(),
+                "*".to_owned(),
+            ))
+        })?;
+
+        // Load the latest store pointer
+        let (hash, annotation) = self.get_hash_and_annotation::<StorePointer>(&ModelID::Hash(
+            latest_model_info.hash.clone(),
+        ))?;
+
+        let mut store_pointer = self.load_model::<StorePointer>(&latest_model_info.hash)?;
+        store_pointer.hash = hash;
+        store_pointer.annotation = annotation.ok_or_else(|| {
+            OrcaError::from(Kind::NoAnnotationFound(
+                store_name.to_owned(),
+                "*".to_owned(),
+                "*".to_owned(),
+            ))
+        })?;
+
+        Ok(store_pointer)
     }
 }

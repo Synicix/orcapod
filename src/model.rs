@@ -23,24 +23,23 @@ pub fn to_yaml<T: Serialize>(item: &T) -> Result<String> {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct StorePointer {
     /// Version tag to uniquely identify
-    pub version: String,
-    /// Where the map is (Store Name, URI)
-    pub stores: BTreeMap<String, String>,
+    #[serde(skip)]
+    pub annotation: Annotation,
+    #[serde(skip)]
+    /// hash identity, for now it is just the uri
+    pub hash: String,
+    /// Uri path to the store
+    pub uri: String,
 }
 
 impl StorePointer {
-    fn get_store(&self, store_name: &str) -> Result<impl FileStore> {
+    fn get_store(&self) -> Result<impl FileStore> {
         // Load the yaml into a Btreemap, pull out the class, then build the store
 
-        let store_uri = self
-            .stores
-            .get(store_name)
-            .ok_or_else(|| OrcaError::from(Kind::InvalidStoreName(store_name.to_owned())))?;
-
-        let storage_class_name = store_uri.split("::").collect::<Vec<&str>>()[0];
+        let storage_class_name = self.uri.split("::").collect::<Vec<&str>>()[0];
 
         match storage_class_name {
-            "LocalStore" => Ok(LocalStore::from_uri(store_uri)?),
+            "LocalStore" => Ok(LocalStore::from_uri(&self.uri)?),
             _ => Err(OrcaError::from(Kind::UnsupportedFileStorage(
                 storage_class_name.to_owned(),
             ))),
@@ -222,7 +221,7 @@ impl Serialize for PodJob {
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
 pub struct Annotation {
     /// A unique name.
     pub name: String,

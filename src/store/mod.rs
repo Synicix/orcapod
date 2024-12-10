@@ -95,7 +95,7 @@ pub trait ModelStore: Sized {
     ///
     /// # Errors
     /// Will return orca error if fail to load latest store pointer
-    fn load_store_pointer(&self) -> Result<StorePointer>;
+    fn load_store_pointer(&self, store_name: &str) -> Result<StorePointer>;
 
     /// Will delete everything store
     ///
