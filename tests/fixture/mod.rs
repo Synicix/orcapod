@@ -18,7 +18,7 @@ use std::{collections::BTreeMap, io::Cursor, ops::Deref, path::PathBuf};
 
 // --- fixtures ---
 
-pub fn pod_style() -> Result<Pod> {
+pub fn pod_fixture() -> Result<Pod> {
     Ok(Pod::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
@@ -60,7 +60,7 @@ pub fn pod_style() -> Result<Pod> {
 
 static IMAGE_DIM: u32 = 512;
 
-pub fn pod_job_style<T: FileStore>(store: &T) -> Result<PodJob> {
+pub fn pod_job_fixture<T: FileStore>(store: &T) -> Result<PodJob> {
     // Generate random uniform image
     let mut img_buffer = RgbImage::new(IMAGE_DIM, IMAGE_DIM);
 
@@ -101,7 +101,7 @@ pub fn pod_job_style<T: FileStore>(store: &T) -> Result<PodJob> {
             description: "This is an example pod job.".to_owned(),
             version: "0.67.0".to_owned(),
         }),
-        pod_style()?,
+        pod_fixture()?,
         input_volume_map,
         output_store_mapping,
         2.0_f32,
@@ -257,8 +257,8 @@ impl Model {
 impl ModelType {
     pub fn get_model<T: ModelStore + FileStore>(&self, store: &StoreScaffold<T>) -> Result<Model> {
         match self {
-            Self::Pod => Ok(Model::Pod(pod_style()?)),
-            Self::PodJob => Ok(Model::PodJob(pod_job_style(&store.store)?)),
+            Self::Pod => Ok(Model::Pod(pod_fixture()?)),
+            Self::PodJob => Ok(Model::PodJob(pod_job_fixture(&store.store)?)),
             Self::StorePointer => Ok(Model::StorePointer(store_pointer_fixture(&store.store)?)),
         }
     }

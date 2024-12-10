@@ -2,10 +2,10 @@
 
 pub mod fixture;
 use anyhow::Result;
-use fixture::{pod_job_style, pod_style, store_pointer_fixture};
+use fixture::{pod_fixture, pod_job_fixture, store_pointer_fixture};
 use indoc::indoc;
 use orcapod::{
-    model::{to_yaml, Pod, PodJob},
+    model::{to_yaml, Pod, PodJob, StorePointer},
     store::{localstore::LocalStore, FileStore},
 };
 use tempfile::tempdir;
@@ -13,7 +13,7 @@ use tempfile::tempdir;
 #[test]
 fn hash() -> Result<()> {
     assert_eq!(
-        pod_style()?.hash,
+        pod_fixture()?.hash,
         "5c6d2467f5f1cbfc6b321208ae9628be6a61255a810a08ddad60a7abb8953e53",
         "Hash didn't match."
     );
@@ -23,7 +23,7 @@ fn hash() -> Result<()> {
 #[test]
 fn pod_to_yaml() -> Result<()> {
     assert_eq!(
-        to_yaml::<Pod>(&pod_style()?)?,
+        to_yaml::<Pod>(&pod_fixture()?)?,
         indoc! {"
             class: pod
             command: tail -f /dev/null
@@ -55,7 +55,7 @@ fn pod_job_to_yaml() -> Result<()> {
     let temp_dir = tempdir()?.into_path();
     assert_eq!(
         // Use LocalFileStore as store example
-        to_yaml::<PodJob>(&pod_job_style(&LocalStore::new(temp_dir))?)?,
+        to_yaml::<PodJob>(&pod_job_fixture(&LocalStore::new(temp_dir))?)?,
         indoc! {"
         class: pod_job
         cpu_limit: 2.0
@@ -75,6 +75,24 @@ fn pod_job_to_yaml() -> Result<()> {
         pod_hash: 5c6d2467f5f1cbfc6b321208ae9628be6a61255a810a08ddad60a7abb8953e53
         retry_policy: NoRetry
     "},
+        "YAML serialization didn't match."
+    );
+    Ok(())
+}
+
+#[test]
+fn store_pointer_to_yaml() -> Result<()> {
+    let temp_dir = tempdir()?.into_path();
+
+    let expected_yaml = format!(
+        "class: store_pointer\nuri: LocalStore::{}\n",
+        temp_dir.to_string_lossy()
+    );
+
+    assert_eq!(
+        // Use LocalFileStore as store example
+        to_yaml::<StorePointer>(&store_pointer_fixture(&LocalStore::new(temp_dir))?)?,
+        expected_yaml,
         "YAML serialization didn't match."
     );
     Ok(())
