@@ -2,11 +2,11 @@
 
 pub mod fixture;
 use anyhow::Result;
-use fixture::{pod_job_style, pod_style};
+use fixture::{pod_job_style, pod_style, store_pointer_fixture};
 use indoc::indoc;
 use orcapod::{
     model::{to_yaml, Pod, PodJob},
-    store::localstore::LocalStore,
+    store::{localstore::LocalStore, FileStore},
 };
 use tempfile::tempdir;
 
@@ -77,5 +77,17 @@ fn pod_job_to_yaml() -> Result<()> {
     "},
         "YAML serialization didn't match."
     );
+    Ok(())
+}
+
+#[test]
+fn store_pointer_get_store() -> Result<()> {
+    let temp_dir = tempdir()?.into_path();
+    let store = LocalStore::new(temp_dir);
+
+    // Create the fixture
+    let store_pointer = store_pointer_fixture(&store)?;
+    let loaded_store = store_pointer.get_store()?;
+    assert!(loaded_store.get_uri() == store.get_uri());
     Ok(())
 }

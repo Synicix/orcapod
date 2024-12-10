@@ -41,6 +41,7 @@ pub trait ModelStore: Sized {
     ///
     /// Will return `Err` if there is an issue storing `pod`.
     fn save_pod(&self, pod: &Pod) -> Result<()>;
+
     /// How to load a stored pod into a model instance.
     ///
     /// # Errors
@@ -48,12 +49,14 @@ pub trait ModelStore: Sized {
     /// Will return `Err` if there is an issue loading a pod from the store using `name` and
     /// `version`.
     fn load_pod(&self, model_id: &ModelID) -> Result<Pod>;
+
     /// How to query stored pods.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue querying metadata from existing pods in the store.
     fn list_pod(&self) -> Result<Vec<ModelInfo>>;
+
     /// How to explicitly delete a stored pod and all associated annotations (does not propagate).
     ///
     /// # Errors
@@ -83,7 +86,7 @@ pub trait ModelStore: Sized {
     /// Delete job by ``model_id``
     ///
     /// # Errors
-    /// Will return error if failed to delete the pod
+    /// Will return error if failed to delete the pod job
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
 
     ///
@@ -96,6 +99,18 @@ pub trait ModelStore: Sized {
     /// # Errors
     /// Will return orca error if fail to load latest store pointer
     fn load_store_pointer(&self, store_name: &str) -> Result<StorePointer>;
+
+    /// List all avaliable store pointers if there are any
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue querying metadata from existing store pointers in the store.
+    fn list_store_pointer(&self) -> Result<Vec<ModelInfo>>;
+
+    /// Delete store pointer by ``model_id``
+    ///
+    /// # Errors
+    /// Will return error if failed to delete the store pointer
+    fn delete_store_pointer(&self, model_id: &ModelID) -> Result<()>;
 
     /// Will delete everything store
     ///

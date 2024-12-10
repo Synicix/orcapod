@@ -2,10 +2,9 @@ use colored::Colorize;
 use glob;
 use merkle_hash::error::IndexingError;
 use regex;
-use serde_yaml::{self, Value};
 use std::{
     error::Error,
-    fmt::{self, write, Display, Formatter},
+    fmt::{self, Display, Formatter},
     io,
     path::PathBuf,
     result,
@@ -39,12 +38,11 @@ pub(crate) enum Kind {
     FromUtf8Error(FromUtf8Error),
     UnsupportedFileStorage(String),
     InvalidURIForFileStore(String, String),
-    InvalidStoreName(String),
-    NoStorePointersFound,
     MissingPodHashFromPodJobYaml(String),
     FailedToCovertValueToString,
     MultipleHashesForAnnotation(String, String),
     InvalidIndex(usize),
+    DeletingAnnotationForStorePointerNotAllowed,
 }
 
 /// A stable error API interface.
@@ -84,14 +82,6 @@ impl Display for OrcaError {
                     "Fail to initialize file store with uri {uri} with error {error}"
                 )
             }
-            Kind::InvalidStoreName(store_name) => {
-                write!(f, "Invalid store name: {store_name}")
-            }
-            Kind::NoStorePointersFound => write!(
-                f,
-                "No Store Pointers available. Perhaps define one first as save it"
-            ),
-
             Kind::MissingPodHashFromPodJobYaml(yaml) => {
                 write!(f, "Missing pod_hash from Pod Job yaml: {yaml}")
             }
@@ -100,6 +90,7 @@ impl Display for OrcaError {
             }
             Kind::MultipleHashesForAnnotation(name, version) => write!(f, "Found mutiple hashes when searching by annotation(name: {name}, version: {version}"),
             Kind::InvalidIndex(idx) => write!(f, "Invalid idx {idx} while trying to access vector"),
+            Kind::DeletingAnnotationForStorePointerNotAllowed => write!(f, "Deletion store pointer annotation is not allowed"),
         }
     }
 }

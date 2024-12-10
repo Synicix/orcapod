@@ -5,12 +5,12 @@
     reason = "Integration tests won't be included in documentation."
 )]
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use image::{DynamicImage, ImageFormat, RgbImage};
 use orcapod::{
     model::{
         Annotation, Input, InputStoreMapping, OutputStoreMapping, Pod, PodJob, RetryPolicy,
-        StreamInfo,
+        StorePointer, StreamInfo,
     },
     store::{FileStore, ModelID, ModelInfo, ModelStore},
 };
@@ -110,6 +110,17 @@ pub fn pod_job_style<T: FileStore>(store: &T) -> Result<PodJob> {
     )?)
 }
 
+pub fn store_pointer_fixture(store: &impl FileStore) -> Result<StorePointer> {
+    Ok(StorePointer::new(
+        Annotation {
+            name: "store 1".to_owned(),
+            version: "0.0.0".to_owned(),
+            description: "Exmaple store pointer for test usage".to_owned(),
+        },
+        store.get_uri(),
+    )?)
+}
+
 // --- util ---
 #[derive(Debug)]
 pub struct StoreScaffold<T: ModelStore> {
@@ -134,6 +145,9 @@ impl<T: ModelStore> StoreScaffold<T> {
         match model {
             Model::Pod(pod) => Ok(self.store.save_pod(pod)?),
             Model::PodJob(pod_job) => Ok(self.store.save_pod_job(pod_job)?),
+            Model::StorePointer(store_pointer) => {
+                Ok(self.store.save_store_pointer(store_pointer)?)
+            }
         }
     }
 
@@ -141,6 +155,17 @@ impl<T: ModelStore> StoreScaffold<T> {
         match model_type {
             ModelType::Pod => Ok(Model::Pod(self.store.load_pod(model_id)?)),
             ModelType::PodJob => Ok(Model::PodJob(self.store.load_pod_job(model_id)?)),
+            ModelType::StorePointer => {
+                let store_name = match model_id {
+                    ModelID::Hash(_) => {
+                        return Err(anyhow!("Store model cannot be loaded by hash only"))
+                    }
+                    ModelID::Annotation(name, _) => name,
+                };
+                Ok(Model::StorePointer(
+                    self.store.load_store_pointer(store_name)?,
+                ))
+            }
         }
     }
 
@@ -148,6 +173,7 @@ impl<T: ModelStore> StoreScaffold<T> {
         match model_type {
             ModelType::Pod => Ok(self.store.list_pod()?),
             ModelType::PodJob => Ok(self.store.list_pod_job()?),
+            ModelType::StorePointer => Ok(self.store.list_store_pointer()?),
         }
     }
 
@@ -155,6 +181,7 @@ impl<T: ModelStore> StoreScaffold<T> {
         match model_type {
             ModelType::Pod => Ok(self.store.delete_pod(model_id)?),
             ModelType::PodJob => Ok(self.store.delete_pod_job(model_id)?),
+            ModelType::StorePointer => Ok(self.store.delete_store_pointer(model_id)?),
         }
     }
 
@@ -167,6 +194,9 @@ impl<T: ModelStore> StoreScaffold<T> {
         match model_type {
             ModelType::Pod => Ok(self.store.delete_annotation::<Pod>(name, version)?),
             ModelType::PodJob => Ok(self.store.delete_annotation::<PodJob>(name, version)?),
+            ModelType::StorePointer => Ok(self
+                .store
+                .delete_annotation::<StorePointer>(name, version)?),
         }
     }
 }
@@ -175,6 +205,7 @@ impl<T: ModelStore> StoreScaffold<T> {
 pub enum Model {
     Pod(Pod),
     PodJob(PodJob),
+    StorePointer(StorePointer),
 }
 
 impl Model {
@@ -188,6 +219,7 @@ impl Model {
                 .annotation
                 .as_ref()
                 .expect("Pod job has empty annotation"),
+            Self::StorePointer(store_pointer) => &store_pointer.annotation,
         }
     }
 
@@ -195,13 +227,18 @@ impl Model {
         match self {
             Self::Pod(pod) => &pod.hash,
             Self::PodJob(pod_job) => &pod_job.hash,
+            Self::StorePointer(store_pointer) => &store_pointer.hash,
         }
     }
 
+    /// # Panics
+    /// Only panic if ``store_pointer`` annotation is None which shouldn't be possiable
     pub fn set_annotation(&mut self, annotation: Option<Annotation>) {
         match self {
             Self::Pod(pod) => pod.annotation = annotation,
             Self::PodJob(pod_job) => pod_job.annotation = annotation,
+            // Store pointer cannot have an empty annotation
+            Self::StorePointer(store_pointer) => store_pointer.annotation = annotation.unwrap(),
         }
     }
 
@@ -212,6 +249,7 @@ impl Model {
                 pod_job.pod.annotation = None;
                 Ok(())
             }
+            Self::StorePointer(_) => Err(anyhow!("Store pointer cannot have None annotation")),
         }
     }
 }
@@ -221,6 +259,7 @@ impl ModelType {
         match self {
             Self::Pod => Ok(Model::Pod(pod_style()?)),
             Self::PodJob => Ok(Model::PodJob(pod_job_style(&store.store)?)),
+            Self::StorePointer => Ok(Model::StorePointer(store_pointer_fixture(&store.store)?)),
         }
     }
 }
@@ -228,4 +267,5 @@ impl ModelType {
 pub enum ModelType {
     Pod,
     PodJob,
+    StorePointer,
 }

@@ -28,54 +28,89 @@ fn test_store_wipe() -> Result<()> {
 
 // Pod Store Test
 #[test]
-fn test_list_pod() -> Result<()> {
-    test_list_model(&ModelType::Pod)
+fn list_pod() -> Result<()> {
+    list_model(&ModelType::Pod)
 }
 
 #[test]
-fn test_load_pod() -> Result<()> {
-    test_load_model(&ModelType::Pod)
+fn load_pod() -> Result<()> {
+    load_model(&ModelType::Pod)
 }
 
 #[test]
-fn test_delete_pod_by_hash() -> Result<()> {
-    test_delete_model_by_hash(&ModelType::Pod)
+fn delete_pod_by_hash() -> Result<()> {
+    delete_model_by_hash(&ModelType::Pod)
 }
 
 #[test]
-fn test_delete_pod_by_annotation() -> Result<()> {
-    test_delete_model_by_annotation(&ModelType::Pod)
+fn delete_pod_by_annotation() -> Result<()> {
+    delete_model_by_annotation(&ModelType::Pod)
 }
 
 #[test]
-fn test_delete_pod_annotation() -> Result<()> {
-    test_delete_annotation(&ModelType::Pod)
+fn delete_pod_annotation() -> Result<()> {
+    delete_annotation(&ModelType::Pod)
 }
 
 // Pod Job Store Tests
 #[test]
-fn test_list_pod_job() -> Result<()> {
-    test_list_model(&ModelType::PodJob)
+fn list_pod_job() -> Result<()> {
+    list_model(&ModelType::PodJob)
 }
 
 #[test]
-fn test_load_pod_job() -> Result<()> {
-    test_load_model(&ModelType::PodJob)
+fn load_pod_job() -> Result<()> {
+    load_model(&ModelType::PodJob)
 }
 
 #[test]
-fn test_delete_pod_job_by_hash() -> Result<()> {
-    test_delete_model_by_hash(&ModelType::PodJob)
+fn delete_pod_job_by_hash() -> Result<()> {
+    delete_model_by_hash(&ModelType::PodJob)
 }
 
 #[test]
-fn test_delete_pod_job_by_annotation() -> Result<()> {
-    test_delete_model_by_annotation(&ModelType::PodJob)
+fn delete_pod_job_by_annotation() -> Result<()> {
+    delete_model_by_annotation(&ModelType::PodJob)
 }
 
 #[test]
-fn test_delete_pod_job_annotation() -> Result<()> {
-    test_delete_annotation(&ModelType::PodJob)
+fn delete_pod_job_annotation() -> Result<()> {
+    delete_annotation(&ModelType::PodJob)
+}
+
+#[test]
+fn load_store_pointer() -> Result<()> {
+    // Special case where annotation cannot be None
+    let temp_dir = tempdir()?.into_path();
+    let (model, store) = scaffold_store_with_model(&ModelType::StorePointer, temp_dir)?;
+
+    assert!(
+        model
+            == store.load_model(
+                &ModelID::Annotation(
+                    model.get_annotation().name.clone(),
+                    model.get_annotation().version.clone()
+                ),
+                &ModelType::StorePointer,
+            )?
+    );
+
+    Ok(())
+}
+
+#[test]
+fn list_store_pointer() -> Result<()> {
+    list_model(&ModelType::StorePointer)
+}
+
+#[test]
+fn delete_store_pointer_by_hash() -> Result<()> {
+    delete_model_by_hash(&ModelType::StorePointer)
+}
+
+#[test]
+fn delete_store_pointer_by_annotation() -> Result<()> {
+    delete_model_by_annotation(&ModelType::StorePointer)
 }
 
 fn scaffold_store_with_model(
@@ -93,15 +128,12 @@ fn scaffold_store_with_model(
     Ok((model, store))
 }
 
-fn test_list_model(model_type: &ModelType) -> Result<()> {
+fn list_model(model_type: &ModelType) -> Result<()> {
     let temp_dir = tempdir()?.into_path();
     let (model, store) = scaffold_store_with_model(model_type, temp_dir)?;
 
     let list_result = store.list_model(model_type)?;
-    assert!(
-        list_result.len() == 1,
-        "List result return more than 1 value"
-    );
+    assert!(list_result.len() == 1, "List did not return 1 value");
     assert!(
         list_result[0].hash == model.get_hash(),
         "Model hash didn't match what was put in"
@@ -118,21 +150,12 @@ fn test_list_model(model_type: &ModelType) -> Result<()> {
     Ok(())
 }
 
-fn test_load_model(model_type: &ModelType) -> Result<()> {
+fn load_model(model_type: &ModelType) -> Result<()> {
     let temp_dir = tempdir()?.into_path();
     let (mut model, store) = scaffold_store_with_model(model_type, temp_dir)?;
 
     model.set_sub_models_annotation_to_none()?;
 
-    let loaded_model = store.load_model(
-        &ModelID::Annotation(
-            model.get_annotation().name.clone(),
-            model.get_annotation().version.clone(),
-        ),
-        model_type,
-    )?;
-
-    println!("{model:?}\n{loaded_model:?}");
     // By name and version
     assert!(
         model
@@ -157,7 +180,7 @@ fn test_load_model(model_type: &ModelType) -> Result<()> {
     Ok(())
 }
 
-fn test_delete_annotation(model_type: &ModelType) -> Result<()> {
+fn delete_annotation(model_type: &ModelType) -> Result<()> {
     let temp_dir = tempdir()?.into_path();
     let (model, store) = scaffold_store_with_model(model_type, temp_dir)?;
 
@@ -188,7 +211,7 @@ fn test_delete_annotation(model_type: &ModelType) -> Result<()> {
     Ok(())
 }
 
-fn test_delete_model_by_hash(model_type: &ModelType) -> Result<()> {
+fn delete_model_by_hash(model_type: &ModelType) -> Result<()> {
     let temp_dir = tempdir()?.into_path();
     let (model, store) = scaffold_store_with_model(model_type, temp_dir)?;
 
@@ -200,7 +223,7 @@ fn test_delete_model_by_hash(model_type: &ModelType) -> Result<()> {
     Ok(())
 }
 
-fn test_delete_model_by_annotation(model_type: &ModelType) -> Result<()> {
+fn delete_model_by_annotation(model_type: &ModelType) -> Result<()> {
     let temp_dir = tempdir()?.into_path();
     let (model, store) = scaffold_store_with_model(model_type, temp_dir)?;
 

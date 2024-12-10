@@ -33,7 +33,26 @@ pub struct StorePointer {
 }
 
 impl StorePointer {
-    fn get_store(&self) -> Result<impl FileStore> {
+    /// Function to create new store pointer and compute the hash
+    ///
+    /// # Errors
+    /// Return serialization error if something went wrong.
+    pub fn new(annotation: Annotation, uri: String) -> Result<Self> {
+        let mut store_pointer = Self {
+            annotation,
+            uri,
+            hash: String::new(),
+        };
+
+        store_pointer.hash = hash(&to_yaml(&store_pointer)?);
+        Ok(store_pointer)
+    }
+
+    /// Function to rebuild the store based on self
+    ///
+    /// # Errors
+    /// Will fail if rebuilding of the store access struct fails
+    pub fn get_store(&self) -> Result<impl FileStore> {
         // Load the yaml into a Btreemap, pull out the class, then build the store
 
         let storage_class_name = self.uri.split("::").collect::<Vec<&str>>()[0];
