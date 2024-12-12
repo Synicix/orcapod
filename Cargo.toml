@@ -33,11 +33,12 @@ heck = "0.5.0"
 colored = "2.1.0"
 merkle_hash = "3.7.0"
 image = "0.25.5"
-anyhow = "1.0.93"
+
 
 [dev-dependencies]
 tempfile = "3.13.0"
 indoc = "2.0.5"
+anyhow = "1.0.93"
 
 [lints.rust]
 non_ascii_idents = "deny"
