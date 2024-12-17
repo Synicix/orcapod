@@ -39,6 +39,7 @@ hashes = "0.1.9"
 [dev-dependencies]
 tempfile = "3.13.0"
 indoc = "2.0.5"
+anyhow = "1.0.93"
 
 [lints.rust]
 non_ascii_idents = "deny"

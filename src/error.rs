@@ -8,7 +8,6 @@ use std::{
     io,
     path::PathBuf,
     result,
-    string::FromUtf8Error,
 };
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T> = result::Result<T, OrcaError>;
@@ -35,7 +34,6 @@ pub(crate) enum Kind {
     /// Wrapper around index error thrown by
     IndexingError(IndexingError),
     /// Wrapper around utf8 encoding error
-    FromUtf8Error(FromUtf8Error),
     UnsupportedFileStorage(String),
     InvalidURIForFileStore(String, String),
     MissingPodHashFromPodJobYaml(String),
@@ -72,7 +70,6 @@ impl Display for OrcaError {
             Kind::RegexError(error) => write!(f, "{error}"),
             Kind::IoError(error) => write!(f, "{error}"),
             Kind::IndexingError(error) => write!(f, "{error}"),
-            Kind::FromUtf8Error(error) => write!(f, "{error}"),
             Kind::UnsupportedFileStorage(file_store_type) => {
                 write!(f, "Unsupported file store: {file_store_type}")
             }
@@ -117,12 +114,6 @@ impl From<regex::Error> for OrcaError {
 impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
         Self(Kind::IoError(error))
-    }
-}
-
-impl From<FromUtf8Error> for OrcaError {
-    fn from(error: FromUtf8Error) -> Self {
-        Self(Kind::FromUtf8Error(error))
     }
 }
 
