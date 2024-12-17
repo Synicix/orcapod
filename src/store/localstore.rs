@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{FileStore, StorePointer};
+use super::{DataStore, StorePointer};
 
 static FILE_STORE_FOLDER_NAME: &str = "file_store";
 /// Relative path where model specification is stored within the model directory.
@@ -238,7 +238,29 @@ impl LocalStore {
     }
 }
 
-impl FileStore for LocalStore {
+impl DataStore for LocalStore {
+    fn from_uri(uri: &str) -> Result<Self> {
+        // Remove the class name from the start
+        let directory = uri.split("::").collect::<Vec<&str>>()[1];
+        if !PathBuf::from(directory).exists() {
+            // uri is not valid
+            return Err(OrcaError::from(Kind::InvalidURIForFileStore(
+                "Directory doesn't exist or not accessible".to_owned(),
+                directory.to_owned(),
+            )));
+        }
+
+        Ok(Self {
+            directory: directory.into(),
+        })
+    }
+
+    fn get_uri(&self) -> String {
+        let mut uri = String::from("LocalStore::");
+        uri.push_str(&self.directory.to_string_lossy());
+        uri
+    }
+
     fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String> {
         Ok(
             MerkleTree::builder(self.directory.join(path).to_string_lossy())
@@ -265,31 +287,25 @@ impl FileStore for LocalStore {
             true,
         )
     }
-
-    fn from_uri(uri: &str) -> Result<Self> {
-        // Remove the class name from the start
-        let directory = uri.split("::").collect::<Vec<&str>>()[1];
-        if !PathBuf::from(directory).exists() {
-            // uri is not valid
-            return Err(OrcaError::from(Kind::InvalidURIForFileStore(
-                "Directory doesn't exist or not accessible".to_owned(),
-                directory.to_owned(),
-            )));
-        }
-
-        Ok(Self {
-            directory: directory.into(),
-        })
-    }
-
-    fn get_uri(&self) -> String {
-        let mut uri = String::from("LocalStore::");
-        uri.push_str(&self.directory.to_string_lossy());
-        uri
-    }
 }
 
 impl ModelStore for LocalStore {
+    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
+        if get_type_name::<T>() == "store_pointer" {
+            return Err(OrcaError::from(
+                Kind::DeletingAnnotationForStorePointerNotAllowed,
+            ));
+        }
+
+        let hash = self.lookup_hash::<T>(name, version)?;
+
+        let annotation_file =
+            self.make_hash_rel_path::<T>(&hash, &Self::make_annotation_relpath(name, version));
+        fs::remove_file(&annotation_file)?;
+
+        Ok(())
+    }
+
     fn save_pod(&self, pod: &Pod) -> Result<()> {
         self.save_model(pod, &pod.hash, &pod.annotation)
     }
@@ -310,22 +326,6 @@ impl ModelStore for LocalStore {
 
     fn delete_pod(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<Pod>(model_id)
-    }
-
-    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
-        if get_type_name::<T>() == "store_pointer" {
-            return Err(OrcaError::from(
-                Kind::DeletingAnnotationForStorePointerNotAllowed,
-            ));
-        }
-
-        let hash = self.lookup_hash::<T>(name, version)?;
-
-        let annotation_file =
-            self.make_hash_rel_path::<T>(&hash, &Self::make_annotation_relpath(name, version));
-        fs::remove_file(&annotation_file)?;
-
-        Ok(())
     }
 
     fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
@@ -366,10 +366,6 @@ impl ModelStore for LocalStore {
 
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<PodJob>(model_id)
-    }
-
-    fn wipe(&self) -> Result<()> {
-        Ok(fs::remove_dir_all(&self.directory)?)
     }
 
     fn save_store_pointer(&self, store_pointer: &StorePointer) -> Result<()> {
@@ -429,5 +425,9 @@ impl ModelStore for LocalStore {
 
     fn delete_store_pointer(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<StorePointer>(model_id)
+    }
+
+    fn wipe(&self) -> Result<()> {
+        Ok(fs::remove_dir_all(&self.directory)?)
     }
 }

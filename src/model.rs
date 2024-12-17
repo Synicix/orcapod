@@ -1,6 +1,6 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    store::{localstore::LocalStore, FileStore},
+    store::{localstore::LocalStore, DataStore},
     util::{get_type_name, hash},
 };
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -52,7 +52,7 @@ impl StorePointer {
     ///
     /// # Errors
     /// Will fail if rebuilding of the store access struct fails
-    pub fn get_store(&self) -> Result<impl FileStore> {
+    pub fn get_store(&self) -> Result<impl DataStore> {
         // Load the yaml into a Btreemap, pull out the class, then build the store
 
         let storage_class_name = self.uri.split("::").collect::<Vec<&str>>()[0];
