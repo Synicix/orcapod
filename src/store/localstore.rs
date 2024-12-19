@@ -1,17 +1,18 @@
 use crate::{
+    crypto::{hash_buf_reader, hash_bytes, HASH_SIZE_IN_BYTES},
     error::{Kind, OrcaError, Result},
-    model::{to_yaml, Annotation, Pod, PodJob},
+    model::{to_yaml, Annotation, Input, Pod, PodJob},
     store::{ModelID, ModelInfo, ModelStore},
     util::get_type_name,
 };
 use colored::Colorize;
-use merkle_hash::{Algorithm, Encodable, MerkleTree};
 use regex::Regex;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::Value;
 use std::{
     collections::{BTreeMap, HashSet},
-    fs::{self},
+    fs::{self, File},
+    io::BufReader,
     path::{Path, PathBuf},
 };
 
@@ -20,6 +21,8 @@ use super::{FileStore, StorePointer};
 static FILE_STORE_FOLDER_NAME: &str = "file_store";
 /// Relative path where model specification is stored within the model directory.
 static SPEC_FILENAME: &str = "spec.yaml";
+/// How large should the read file buffer be (for chunk reading during check sum computing)
+static BUFFER_READER_CAP: usize = 2 << 13; // 8KB chunks to match with page size typically found
 
 /// Support for a storage backend on a local filesystem directory.
 #[derive(Debug, Serialize, Deserialize)]
@@ -239,33 +242,6 @@ impl LocalStore {
 }
 
 impl FileStore for LocalStore {
-    fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String> {
-        Ok(
-            MerkleTree::builder(self.directory.join(path).to_string_lossy())
-                .algorithm(Algorithm::Blake3)
-                .hash_names(true)
-                .build()?
-                .root
-                .item
-                .hash
-                .to_hex_string(),
-        )
-    }
-
-    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
-        Ok(fs::read(
-            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
-        )?)
-    }
-
-    fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()> {
-        Self::save_file_internal(
-            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
-            content,
-            true,
-        )
-    }
-
     fn from_uri(uri: &str) -> Result<Self> {
         // Remove the class name from the start
         let directory = uri.split("::").collect::<Vec<&str>>()[1];
@@ -286,6 +262,101 @@ impl FileStore for LocalStore {
         let mut uri = String::from("LocalStore::");
         uri.push_str(&self.directory.to_string_lossy());
         uri
+    }
+
+    fn compute_checksum_for_input(&self, input: &Input) -> Result<String> {
+        match input {
+            Input::FileCollection(input_store_mappings) => {
+                let hashes = input_store_mappings
+                    .iter()
+                    .map(|mapping| {
+                        Ok((
+                            {
+                                match &mapping.store_name {
+                                    Some(store_name) => self
+                                        .load_store_pointer(store_name)?
+                                        .get_store()?
+                                        .compute_checksum_for_input(input)?,
+                                    None => {
+                                        // Empty store name, thus use default behaivor
+                                        self.compute_checksum_for_path(&mapping.path)?
+                                    }
+                                }
+                            },
+                            (),
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<String, ()>>>()?;
+
+                // Combine all the hashes by alpha numeric order
+                let mut hashes_buffer = String::with_capacity(HASH_SIZE_IN_BYTES);
+                for hash in hashes.keys() {
+                    hashes_buffer.push_str(hash);
+                }
+
+                // Hash the buffer
+                Ok(hash_bytes(hashes_buffer))
+            }
+            // Case for handling folder and singular file which call the same code
+            Input::File(input_store_mapping) | Input::Folder(input_store_mapping) => {
+                match &input_store_mapping.store_name {
+                    Some(store_name) => self
+                        .load_store_pointer(store_name)?
+                        .get_store()?
+                        .compute_checksum_for_input(input),
+                    None => {
+                        // It is none, thus the store is the same as the model store
+                        self.compute_checksum_for_path(&input_store_mapping.path)
+                    }
+                }
+            }
+        }
+    }
+
+    fn compute_checksum_for_path(&self, path: impl AsRef<Path>) -> Result<String> {
+        if path.as_ref().is_file() {
+            // Read and hash in chunks
+            let file = File::open(path.as_ref())?;
+            let buf_reader = BufReader::with_capacity(BUFFER_READER_CAP, file);
+
+            // Use the buf_reader hashing
+            hash_buf_reader(buf_reader)
+        } else if path.as_ref().is_dir() {
+            // Path is a directory, thus we will need to recursively hash and sort
+            let hashes = path
+                .as_ref()
+                .read_dir()?
+                .map(|dir_entry| Ok((self.compute_checksum_for_path(dir_entry?.path())?, ())))
+                .collect::<Result<BTreeMap<String, ()>>>()?;
+
+            // Combine all the hashes by alpha numeric order
+            let mut hashes_buffer = String::with_capacity(HASH_SIZE_IN_BYTES);
+            for hash in hashes.keys() {
+                hashes_buffer.push_str(hash);
+            }
+
+            // Hash the buffer
+            Ok(hash_bytes(hashes_buffer))
+        } else {
+            // Unknown type of path or unsupported, thus panic for now
+            Err(OrcaError::from(Kind::UnsupportedPath(
+                path.as_ref().to_path_buf(),
+            )))
+        }
+    }
+
+    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
+        Ok(fs::read(
+            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
+        )?)
+    }
+
+    fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()> {
+        Self::save_file_internal(
+            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
+            content,
+            true,
+        )
     }
 }
 

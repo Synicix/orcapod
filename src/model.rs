@@ -1,4 +1,5 @@
 use crate::{
+    crypto::hash_bytes,
     error::{Kind, OrcaError, Result},
     store::{localstore::LocalStore, FileStore},
     util::{get_type_name, hash},
@@ -129,9 +130,12 @@ impl Pod {
 /// and/or file integrity check
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct InputStoreMapping {
-    path: PathBuf,
-    store_name: Option<String>,
-    content_check_sum: String,
+    /// Path to the file or folder
+    pub path: PathBuf,
+    /// Name of the store to retrieve the store pointer
+    pub store_name: Option<String>,
+    /// SHA256 hash of the contents of the folder or file
+    pub content_check_sum: String,
 }
 
 impl InputStoreMapping {
@@ -149,7 +153,7 @@ impl InputStoreMapping {
 /// Singular file,
 /// or a collection of files that will be map
 ///
-/// NOTE: All files are to be uploaded to the apporiate store ahead of usage
+/// NOTE: All files are to be uploaded to the appropriate store ahead of usage
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum Input {
     /// Single File to be used as input that is stored in the store

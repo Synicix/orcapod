@@ -1,6 +1,5 @@
 use colored::Colorize;
 use glob;
-use merkle_hash::error::IndexingError;
 use regex;
 use std::{
     error::Error,
@@ -31,8 +30,6 @@ pub(crate) enum Kind {
     SerdeYamlError(serde_yaml::Error),
     /// Wrapper around `io::Error`
     IoError(io::Error),
-    /// Wrapper around index error thrown by
-    IndexingError(IndexingError),
     /// Wrapper around utf8 encoding error
     UnsupportedFileStorage(String),
     InvalidURIForFileStore(String, String),
@@ -41,6 +38,7 @@ pub(crate) enum Kind {
     MultipleHashesForAnnotation(String, String),
     InvalidIndex(usize),
     DeletingAnnotationForStorePointerNotAllowed,
+    UnsupportedPath(PathBuf),
 }
 
 /// A stable error API interface.
@@ -69,7 +67,6 @@ impl Display for OrcaError {
             Kind::SerdeYamlError(error) => write!(f, "{error}"),
             Kind::RegexError(error) => write!(f, "{error}"),
             Kind::IoError(error) => write!(f, "{error}"),
-            Kind::IndexingError(error) => write!(f, "{error}"),
             Kind::UnsupportedFileStorage(file_store_type) => {
                 write!(f, "Unsupported file store: {file_store_type}")
             }
@@ -88,6 +85,7 @@ impl Display for OrcaError {
             Kind::MultipleHashesForAnnotation(name, version) => write!(f, "Found mutiple hashes when searching by annotation(name: {name}, version: {version}"),
             Kind::InvalidIndex(idx) => write!(f, "Invalid idx {idx} while trying to access vector"),
             Kind::DeletingAnnotationForStorePointerNotAllowed => write!(f, "Deletion store pointer annotation is not allowed"),
+            Kind::UnsupportedPath(path) => write!(f, "Unsupported path type for path {}. Currently only support dir and file", path.to_string_lossy()),
         }
     }
 }
@@ -114,12 +112,6 @@ impl From<regex::Error> for OrcaError {
 impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
         Self(Kind::IoError(error))
-    }
-}
-
-impl From<IndexingError> for OrcaError {
-    fn from(error: IndexingError) -> Self {
-        Self(Kind::IndexingError(error))
     }
 }
 

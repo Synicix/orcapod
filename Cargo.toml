@@ -31,10 +31,11 @@ glob = "0.3.1"
 regex = "1.11.0"
 heck = "0.5.0"
 colored = "2.1.0"
-merkle_hash = "3.7.0"
 image = "0.25.5"
 anyhow = "1.0.93"
 hashes = "0.1.9"
+rs_merkle = "1.4.2"
+
 
 [dev-dependencies]
 tempfile = "3.13.0"

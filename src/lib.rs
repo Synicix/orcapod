@@ -8,6 +8,7 @@ pub mod model;
 /// Data persistence is provided by using a store backend.
 pub mod store;
 
+/// Module for everything crypto
 pub mod crypto;
 /// Open utils for test to use
 mod util;

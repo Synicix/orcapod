@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     error::Result,
-    model::{Pod, PodJob, StorePointer},
+    model::{Input, Pod, PodJob, StorePointer},
 };
 
 /// Options for identifying a model.
@@ -130,11 +130,37 @@ pub trait FileStore: Sized {
     ///
     fn get_uri(&self) -> String;
 
-    /// Computes the checksum for a given file or folder using merkle tree
+    /// Compute the checksum(hash) for a given input which can be a File, Folder, or
+    /// a Collection of Files from different stores
+    ///
+    /// For File and Folders:
+    /// - Get the store name:
+    ///     If it is None, then the default than the datastore is same and the model store
+    /// - Get the ``StorePointer`` from ``store_name``, using the function ``get_store`` (Assuming it was not none)
+    /// - Call ``compute_checksum_for_path`` and get the checksum
+    ///
+    /// For collection of Files:
+    /// Go through each file and handle it independently of it
     ///
     /// # Errors
-    /// Return ``merkle_hash`` errors
-    fn compute_checksum_for_file_or_dir(&self, path: impl AsRef<Path>) -> Result<String>;
+    /// Return file io error if unable to fetch file
+    fn compute_checksum_for_input(&self, input: &Input) -> Result<String>;
+
+    /// Compute the checksum given a path, which can be a file or a folder.
+    /// NOTE: The folder is expected to be all in the same store
+    ///
+    /// It is expected to compute the hash in the following way:
+    ///
+    /// For File:
+    /// Read the contents and hash it using the method found in the crypto module
+    ///
+    /// For Folders:
+    /// Recursively hash each item and store it in a ``BTreeMap`` then concat the individual hash
+    /// results together into one giant string, then hash it using the ``hash_bytes`` from crypto module
+    ///
+    /// # Errors
+    /// Return file io error if unable to read the underlying file
+    fn compute_checksum_for_path(&self, path: impl AsRef<Path>) -> Result<String>;
 
     /// Function to read file into memory
     ///
