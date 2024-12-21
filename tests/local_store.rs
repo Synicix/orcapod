@@ -8,7 +8,7 @@ use std::path::Path;
 
 use anyhow::{Ok, Result};
 use fixture::{Model, ModelType, StoreScaffold};
-use orcapod::store::{localstore::LocalStore, ModelID};
+use orcapod::store::{local_store::LocalStore, ModelID};
 use tempfile::tempdir;
 
 // Store clean up test
@@ -26,6 +26,9 @@ fn test_store_wipe() -> Result<()> {
     Ok(())
 }
 
+// File Store Tests
+
+// Model Store Tests
 // Pod Store Test
 #[test]
 fn list_pod() -> Result<()> {
@@ -123,8 +126,8 @@ fn scaffold_store_with_model(
     };
 
     // Test saving
-    let model = model_type.get_model(&store)?;
-    store.save_model(&model)?;
+    let mut model = model_type.get_model(&store)?;
+    store.save_model(&mut model)?;
     Ok((model, store))
 }
 

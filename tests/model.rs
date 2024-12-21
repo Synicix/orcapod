@@ -6,7 +6,7 @@ use fixture::{pod_fixture, pod_job_fixture, store_pointer_fixture};
 use indoc::indoc;
 use orcapod::{
     model::{to_yaml, Pod, PodJob, StorePointer},
-    store::{localstore::LocalStore, FileStore},
+    store::{local_store::LocalStore, FileStore},
 };
 use tempfile::tempdir;
 
@@ -60,11 +60,11 @@ fn pod_job_to_yaml() -> Result<()> {
         class: pod_job
         cpu_limit: 2.0
         input_store_mapping:
-          image: !File
+          image: !FileOrFolder
             path: image.png
             store_name: null
             content_check_sum: ''
-          style: !File
+          style: !FileOrFolder
             path: style.png
             store_name: null
             content_check_sum: ''

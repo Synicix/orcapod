@@ -82,11 +82,11 @@ pub fn pod_job_fixture<T: FileStore>(store: &T) -> Result<PodJob> {
 
     input_volume_map.insert(
         "style".to_owned(),
-        Input::File(InputStoreMapping::new("style.png", None)),
+        Input::FileOrFolder(InputStoreMapping::new("style.png", None)),
     );
     input_volume_map.insert(
         "image".to_owned(),
-        Input::File(InputStoreMapping::new("image.png", None)),
+        Input::FileOrFolder(InputStoreMapping::new("image.png", None)),
     );
 
     //
@@ -141,7 +141,7 @@ impl<T: ModelStore> Drop for StoreScaffold<T> {
 }
 
 impl<T: ModelStore> StoreScaffold<T> {
-    pub fn save_model(&self, model: &Model) -> Result<()> {
+    pub fn save_model(&self, model: &mut Model) -> Result<()> {
         match model {
             Model::Pod(pod) => Ok(self.store.save_pod(pod)?),
             Model::PodJob(pod_job) => Ok(self.store.save_pod_job(pod_job)?),

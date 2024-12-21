@@ -1,7 +1,7 @@
 use crate::{
     crypto::hash_bytes,
     error::{Kind, OrcaError, Result},
-    store::{localstore::LocalStore, FileStore},
+    store::{local_store::LocalStore, FileStore, ModelStore},
     util::{get_type_name, hash},
 };
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -128,7 +128,7 @@ impl Pod {
 
 /// Struct to store the path of where to look in the storage along with the checksum for hashing
 /// and/or file integrity check
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct InputStoreMapping {
     /// Path to the file or folder
     pub path: PathBuf,
@@ -139,13 +139,31 @@ pub struct InputStoreMapping {
 }
 
 impl InputStoreMapping {
-    /// Construct a new ``InputStoreMapping`` with empty content check sum
+    /// Function to create the new store mapping and leaving the content check sum computation till later
     pub fn new(path: impl AsRef<Path>, store_name: Option<String>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
             store_name,
             content_check_sum: String::new(),
         }
+    }
+
+    /// Function to compute the checksum for the input given a model store
+    ///
+    /// # Errors
+    /// Error out if fail to get load store pointer, or fail to compute checksum given a path
+    pub fn compute_checksum(&mut self, store: &impl ModelStore) -> Result<()> {
+        self.content_check_sum = match &self.store_name {
+            Some(store_name) => store
+                .load_store_pointer(store_name)?
+                .get_store()?
+                .compute_checksum_for_path(&self.path)?,
+            None => {
+                // Empty store name, thus use default behaivor
+                store.compute_checksum_for_path(&self.path)?
+            }
+        };
+        Ok(())
     }
 }
 
@@ -154,14 +172,34 @@ impl InputStoreMapping {
 /// or a collection of files that will be map
 ///
 /// NOTE: All files are to be uploaded to the appropriate store ahead of usage
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum Input {
-    /// Single File to be used as input that is stored in the store
-    File(InputStoreMapping),
-    /// Collection of files to be used as input (assume to be same type to match against regex)
-    FileCollection(Vec<InputStoreMapping>),
-    /// For folder mounting
-    Folder(InputStoreMapping),
+    /// For a path that points to either a folder or file
+    FileOrFolder(InputStoreMapping),
+    /// Collection of files or folders to be used as input (assume to be same type to match against regex)
+    Collection(Vec<InputStoreMapping>),
+}
+
+impl Input {
+    /// Function to compute the checksum for the input given a model store
+    ///
+    /// # Errors
+    /// Error out if fail to get load store pointer, or fail to compute checksum given a path
+    pub fn compute_checksum(&mut self, store: &impl ModelStore) -> Result<()> {
+        match self {
+            Self::Collection(input_store_mappings) => {
+                // let hashes = BTreeMap::new();
+                for input_store_mapping in input_store_mappings {
+                    input_store_mapping.compute_checksum(store)?;
+                }
+            }
+            // Case for handling folder and singular file which call the same code
+            Self::FileOrFolder(input_store_mapping) => {
+                input_store_mapping.compute_checksum(store)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Mapping for output volume mount from container -> File Store
@@ -185,7 +223,7 @@ pub struct PodJob {
     #[serde(skip)]
     pub hash: String,
     /// String is the key, variable, input is the actual path to look up
-    input_store_mapping: BTreeMap<String, Input>,
+    pub input_store_mapping: BTreeMap<String, Input>,
     output_store_mapping: OutputStoreMapping,
     cpu_limit: f32, // Num of cpu to limit the pod from
     mem_limit: u64, // Bytes to limit memory
@@ -221,6 +259,18 @@ impl PodJob {
             hash: hash(&to_yaml(&pod_job_no_hash)?),
             ..pod_job_no_hash
         })
+    }
+
+    /// Function to compute the checksum for the input given a model store
+    ///
+    /// # Errors
+    /// Error out if fail to get load store pointer, or fail to compute checksum given a path
+    pub fn compute_checksum_for_input(&mut self, store: &impl ModelStore) -> Result<()> {
+        // Compute the checksum for all inputs
+        for input in self.input_store_mapping.values_mut() {
+            input.compute_checksum(store)?;
+        }
+        Ok(())
     }
 }
 

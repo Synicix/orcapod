@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     error::Result,
-    model::{Input, Pod, PodJob, StorePointer},
+    model::{Pod, PodJob, StorePointer},
 };
 
 /// Options for identifying a model.
@@ -25,7 +25,7 @@ pub struct ModelInfo {
 }
 
 /// Standard behavior of any store backend supported.
-pub trait ModelStore: Sized {
+pub trait ModelStore: Sized + FileStore {
     /// How to delete only annotation, which will leave the item untouched
     /// How to explicitly delete an annotation.
     ///
@@ -69,7 +69,7 @@ pub trait ModelStore: Sized {
     ///
     /// # Errors
     /// Return error if failed to save pod for some reason, either encoding or ioerror
-    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()>;
+    fn save_pod_job(&self, pod_job: &mut PodJob) -> Result<()>;
 
     /// Load ``pod_job`` from storage given an ``model_id``
     ///
@@ -130,22 +130,6 @@ pub trait FileStore: Sized {
     ///
     fn get_uri(&self) -> String;
 
-    /// Compute the checksum(hash) for a given input which can be a File, Folder, or
-    /// a Collection of Files from different stores
-    ///
-    /// For File and Folders:
-    /// - Get the store name:
-    ///     If it is None, then the default than the datastore is same and the model store
-    /// - Get the ``StorePointer`` from ``store_name``, using the function ``get_store`` (Assuming it was not none)
-    /// - Call ``compute_checksum_for_path`` and get the checksum
-    ///
-    /// For collection of Files:
-    /// Go through each file and handle it independently of it
-    ///
-    /// # Errors
-    /// Return file io error if unable to fetch file
-    fn compute_checksum_for_input(&self, input: &Input) -> Result<String>;
-
     /// Compute the checksum given a path, which can be a file or a folder.
     /// NOTE: The folder is expected to be all in the same store
     ///
@@ -177,4 +161,4 @@ pub trait FileStore: Sized {
 }
 
 /// Store implementation on a local filesystem.
-pub mod localstore;
+pub mod local_store;

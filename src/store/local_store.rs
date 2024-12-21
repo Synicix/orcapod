@@ -1,7 +1,7 @@
 use crate::{
     crypto::{hash_buf_reader, hash_bytes, HASH_SIZE_IN_BYTES},
     error::{Kind, OrcaError, Result},
-    model::{to_yaml, Annotation, Input, Pod, PodJob},
+    model::{to_yaml, Annotation, Pod, PodJob},
     store::{ModelID, ModelInfo, ModelStore},
     util::get_type_name,
 };
@@ -18,7 +18,6 @@ use std::{
 
 use super::{FileStore, StorePointer};
 
-static FILE_STORE_FOLDER_NAME: &str = "file_store";
 /// Relative path where model specification is stored within the model directory.
 static SPEC_FILENAME: &str = "spec.yaml";
 /// How large should the read file buffer be (for chunk reading during check sum computing)
@@ -51,6 +50,10 @@ impl LocalStore {
             self.directory.to_string_lossy(),
             get_type_name::<T>()
         ))
+    }
+
+    pub fn make_data_path(&self) -> PathBuf {
+        PathBuf::from(format!("{}/data/", self.directory.to_string_lossy(),))
     }
 
     /// Makes path to the hash object
@@ -264,64 +267,17 @@ impl FileStore for LocalStore {
         uri
     }
 
-    fn compute_checksum_for_input(&self, input: &Input) -> Result<String> {
-        match input {
-            Input::FileCollection(input_store_mappings) => {
-                let hashes = input_store_mappings
-                    .iter()
-                    .map(|mapping| {
-                        Ok((
-                            {
-                                match &mapping.store_name {
-                                    Some(store_name) => self
-                                        .load_store_pointer(store_name)?
-                                        .get_store()?
-                                        .compute_checksum_for_input(input)?,
-                                    None => {
-                                        // Empty store name, thus use default behaivor
-                                        self.compute_checksum_for_path(&mapping.path)?
-                                    }
-                                }
-                            },
-                            (),
-                        ))
-                    })
-                    .collect::<Result<BTreeMap<String, ()>>>()?;
-
-                // Combine all the hashes by alpha numeric order
-                let mut hashes_buffer = String::with_capacity(HASH_SIZE_IN_BYTES);
-                for hash in hashes.keys() {
-                    hashes_buffer.push_str(hash);
-                }
-
-                // Hash the buffer
-                Ok(hash_bytes(hashes_buffer))
-            }
-            // Case for handling folder and singular file which call the same code
-            Input::File(input_store_mapping) | Input::Folder(input_store_mapping) => {
-                match &input_store_mapping.store_name {
-                    Some(store_name) => self
-                        .load_store_pointer(store_name)?
-                        .get_store()?
-                        .compute_checksum_for_input(input),
-                    None => {
-                        // It is none, thus the store is the same as the model store
-                        self.compute_checksum_for_path(&input_store_mapping.path)
-                    }
-                }
-            }
-        }
-    }
-
     fn compute_checksum_for_path(&self, path: impl AsRef<Path>) -> Result<String> {
-        if path.as_ref().is_file() {
+        let full_path = self.make_data_path().join(path.as_ref());
+
+        if full_path.is_file() {
             // Read and hash in chunks
-            let file = File::open(path.as_ref())?;
+            let file = File::open(full_path)?;
             let buf_reader = BufReader::with_capacity(BUFFER_READER_CAP, file);
 
             // Use the buf_reader hashing
             hash_buf_reader(buf_reader)
-        } else if path.as_ref().is_dir() {
+        } else if full_path.is_dir() {
             // Path is a directory, thus we will need to recursively hash and sort
             let hashes = path
                 .as_ref()
@@ -339,24 +295,16 @@ impl FileStore for LocalStore {
             Ok(hash_bytes(hashes_buffer))
         } else {
             // Unknown type of path or unsupported, thus panic for now
-            Err(OrcaError::from(Kind::UnsupportedPath(
-                path.as_ref().to_path_buf(),
-            )))
+            Err(OrcaError::from(Kind::UnsupportedPath(full_path)))
         }
     }
 
     fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
-        Ok(fs::read(
-            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
-        )?)
+        Ok(fs::read(self.make_data_path().join(path))?)
     }
 
     fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()> {
-        Self::save_file_internal(
-            self.directory.join(FILE_STORE_FOLDER_NAME).join(path),
-            content,
-            true,
-        )
+        Self::save_file_internal(self.make_data_path().join(path), content, true)
     }
 }
 
@@ -399,7 +347,8 @@ impl ModelStore for LocalStore {
         Ok(())
     }
 
-    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
+    fn save_pod_job(&self, pod_job: &mut PodJob) -> Result<()> {
+        pod_job.compute_checksum_for_input(self)?;
         self.save_pod(&pod_job.pod)?;
         self.save_model(pod_job, &pod_job.hash, &pod_job.annotation)
     }

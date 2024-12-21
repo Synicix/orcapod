@@ -14,11 +14,16 @@ pub fn hash_buf_reader<R: Read>(mut reader: BufReader<R>) -> Result<String> {
     let mut hasher = Sha256::new();
 
     loop {
-        let buffer = reader.fill_buf()?;
-        if buffer.is_empty() {
+        let buffer_len = {
+            let buffer = reader.fill_buf()?;
+            hasher.update(buffer);
+            buffer.len()
+        };
+
+        if buffer_len == 0 {
             break;
         }
-        hasher.update(buffer);
+        reader.consume(buffer_len);
     }
 
     Ok(format!("{:x}", hasher.finalize()))
