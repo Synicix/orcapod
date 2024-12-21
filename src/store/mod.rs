@@ -25,7 +25,7 @@ pub struct ModelInfo {
 }
 
 /// Standard behavior of any store backend supported.
-pub trait ModelStore: Sized + FileStore {
+pub trait ModelStore: Sized + DataStore {
     /// How to delete only annotation, which will leave the item untouched
     /// How to explicitly delete an annotation.
     ///
@@ -120,7 +120,7 @@ pub trait ModelStore: Sized + FileStore {
 }
 
 /// Trait to be implemented by file stores
-pub trait FileStore: Sized {
+pub trait DataStore: Sized {
     ///
     /// # Errors
     /// Will return invalid uri if file store cannot be rebuilt given the uri

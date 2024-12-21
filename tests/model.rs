@@ -6,7 +6,7 @@ use fixture::{pod_fixture, pod_job_fixture, store_pointer_fixture};
 use indoc::indoc;
 use orcapod::{
     model::{to_yaml, Pod, PodJob, StorePointer},
-    store::{local_store::LocalStore, FileStore},
+    store::{local_store::LocalStore, DataStore},
 };
 use tempfile::tempdir;
 

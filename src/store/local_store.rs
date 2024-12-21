@@ -16,7 +16,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{FileStore, StorePointer};
+use super::{DataStore, StorePointer};
 
 /// Relative path where model specification is stored within the model directory.
 static SPEC_FILENAME: &str = "spec.yaml";
@@ -245,7 +245,7 @@ impl LocalStore {
     }
 }
 
-impl FileStore for LocalStore {
+impl DataStore for LocalStore {
     fn from_uri(uri: &str) -> Result<Self> {
         // Remove the class name from the start
         let directory = uri.split("::").collect::<Vec<&str>>()[1];
@@ -310,6 +310,22 @@ impl FileStore for LocalStore {
 }
 
 impl ModelStore for LocalStore {
+    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
+        if get_type_name::<T>() == "store_pointer" {
+            return Err(OrcaError::from(
+                Kind::DeletingAnnotationForStorePointerNotAllowed,
+            ));
+        }
+
+        let hash = self.lookup_hash::<T>(name, version)?;
+
+        let annotation_file =
+            self.make_hash_rel_path::<T>(&hash, &Self::make_annotation_relpath(name, version));
+        fs::remove_file(&annotation_file)?;
+
+        Ok(())
+    }
+
     fn save_pod(&self, pod: &Pod) -> Result<()> {
         self.save_model(pod, &pod.hash, &pod.annotation)
     }
@@ -330,22 +346,6 @@ impl ModelStore for LocalStore {
 
     fn delete_pod(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<Pod>(model_id)
-    }
-
-    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
-        if get_type_name::<T>() == "store_pointer" {
-            return Err(OrcaError::from(
-                Kind::DeletingAnnotationForStorePointerNotAllowed,
-            ));
-        }
-
-        let hash = self.lookup_hash::<T>(name, version)?;
-
-        let annotation_file =
-            self.make_hash_rel_path::<T>(&hash, &Self::make_annotation_relpath(name, version));
-        fs::remove_file(&annotation_file)?;
-
-        Ok(())
     }
 
     fn save_pod_job(&self, pod_job: &mut PodJob) -> Result<()> {
@@ -387,10 +387,6 @@ impl ModelStore for LocalStore {
 
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<PodJob>(model_id)
-    }
-
-    fn wipe(&self) -> Result<()> {
-        Ok(fs::remove_dir_all(&self.directory)?)
     }
 
     fn save_store_pointer(&self, store_pointer: &StorePointer) -> Result<()> {
@@ -450,5 +446,9 @@ impl ModelStore for LocalStore {
 
     fn delete_store_pointer(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<StorePointer>(model_id)
+    }
+
+    fn wipe(&self) -> Result<()> {
+        Ok(fs::remove_dir_all(&self.directory)?)
     }
 }
