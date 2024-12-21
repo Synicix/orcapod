@@ -52,6 +52,7 @@ impl LocalStore {
         ))
     }
 
+    /// Makes the path to the data store
     pub fn make_data_path(&self) -> PathBuf {
         PathBuf::from(format!("{}/data/", self.directory.to_string_lossy(),))
     }
