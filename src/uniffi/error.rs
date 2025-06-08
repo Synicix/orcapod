@@ -10,11 +10,15 @@ use serde_yaml;
 use snafu::prelude::Snafu;
 use std::{
     backtrace::Backtrace,
+    collections::HashMap,
     io,
     path::{self, PathBuf},
     result,
 };
+use tokio::task::JoinError;
 use uniffi;
+
+use super::model::Input;
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
@@ -22,9 +26,6 @@ pub type Result<T, E = OrcaError> = result::Result<T, E>;
 #[snafu(module(selector), visibility(pub(crate)), context(suffix(false)))]
 #[uniffi(flat_error)]
 pub(crate) enum Kind {
-    #[snafu(display(
-        "Received an empty response when attempting to load the alternate container image file: {path:?}."
-    ))]
     EmptyResponseWhenLoadingContainerAltImage {
         path: PathBuf,
         backtrace: Option<Backtrace>,
@@ -73,6 +74,11 @@ pub(crate) enum Kind {
     },
     #[snafu(display("No known container names."))]
     NoContainerNames { backtrace: Option<Backtrace> },
+    #[snafu(display("Invalid parent node key: {parent_node_key}."))]
+    NodeNotFound {
+        parent_node_key: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("Missing file or directory name ({path:?})."))]
     NoFileName {
         path: PathBuf,
@@ -86,6 +92,12 @@ pub(crate) enum Kind {
     #[snafu(display("No tags found in provided container alternate image: {path:?}."))]
     NoTagFoundInContainerAltImage {
         path: PathBuf,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Input map {input_map:?} missing required stream_key {missing_keys:?}"))]
+    MissingStreamKey {
+        input_map: HashMap<String, Input>,
+        missing_keys: Vec<String>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
@@ -116,6 +128,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     SerdeYamlError {
         source: serde_yaml::Error,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    TokioJoinError {
+        source: JoinError,
         backtrace: Option<Backtrace>,
     },
 }

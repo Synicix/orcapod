@@ -47,6 +47,7 @@ glob = "0.3.1"
 heck = "0.5.0"
 # random name generator
 names = "0.14.0"
+petgraph = { version = "0.8.2", features = ["serde-1"] }
 # complex pattern matching in strings
 regex = "1.11.0"
 # serialization/deserialization to/from filestore
@@ -61,6 +62,7 @@ sha2 = "0.10.8"
 snafu = { version = "0.8.5", features = ["futures"] }
 # a runtime for async applications
 tokio = { version = "1.41.0", features = ["full"] }
+tokio-stream = { version = "0.1.17", features = ["sync"] }
 # utilities for async calls
 tokio-util = "0.7.13"
 # automated CFFI + bindings in other languages

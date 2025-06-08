@@ -73,6 +73,10 @@
         "getset",
         "strsim",
         "getrandom",
-        "wasi"
+        "wasi",
+        "strsim",
+        "petgraph",
+        "rfind",
+        "MPSC"
     ]
 }

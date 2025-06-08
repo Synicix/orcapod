@@ -11,8 +11,10 @@ use crate::{
 use derive_more::Display;
 use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{backtrace::Backtrace, collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
+
+use super::error::{Kind, OrcaError};
 
 /// Available models.
 #[derive(uniffi::Enum, Debug)]
@@ -122,7 +124,7 @@ pub struct PodJob {
     pub pod: Arc<Pod>,
     /// Attached, external input streams.
     #[serde(serialize_with = "serialize_hashmap")]
-    pub input_stream: HashMap<String, Input>,
+    pub input_map: HashMap<String, Input>,
     /// Attached, external output directory.
     pub output_dir: OrcaPath,
     /// Maximum allowable cores in fractional cores for the computation.
@@ -145,14 +147,37 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Arc<Pod>,
-        mut input_stream: HashMap<String, Input>,
+        mut input_map: HashMap<String, Input>,
         output_dir: OrcaPath,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
-        input_stream = input_stream
+        // Check if input_map has all the required stream_keys
+        let missing_keys = pod
+            .input_stream
+            .keys()
+            .filter_map(|key| {
+                if input_map.contains_key(key) {
+                    None
+                } else {
+                    Some(key.to_owned())
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if !missing_keys.is_empty() {
+            return Err(OrcaError {
+                kind: Kind::MissingStreamKey {
+                    input_map,
+                    missing_keys,
+                    backtrace: Some(Backtrace::capture()),
+                },
+            });
+        }
+        // Hash all the input_map blobs
+        input_map = input_map
             .into_iter()
             .map(|(stream_name, stream_input)| match stream_input {
                 Input::Unary(blob) => Ok((
@@ -174,7 +199,7 @@ impl PodJob {
             annotation,
             hash: String::new(),
             pod,
-            input_stream,
+            input_map,
             output_dir,
             cpu_limit,
             memory_limit,
@@ -313,6 +338,18 @@ pub struct Blob {
     /// BLOB contents checksum.
     pub checksum: String,
 }
+
+impl Blob {
+    /// Constructor for Blob class with an empty checksum that will be computed when is used in `PodJob`
+    pub const fn new(kind: BlobKind, location: OrcaPath) -> Self {
+        Self {
+            kind,
+            location,
+            checksum: String::new(),
+        }
+    }
+}
+
 /// File or directory options for BLOBs.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum BlobKind {
@@ -321,6 +358,35 @@ pub enum BlobKind {
     File,
     /// A single directory.
     Directory,
+}
+
+/// Mapper
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+pub struct Mapper {
+    /// Hash of the Mapper
+    pub hash: String,
+    #[serde(serialize_with = "serialize_hashmap")]
+    /**
+    Mapping of `input_stream_keys` to `output_stream_keys` of the mapper
+    */
+    pub mapping: HashMap<String, String>,
+}
+
+impl Mapper {
+    /// New function for mapping that computes the hash for
+    /// # Errors
+    /// Will error if it fails to convert to yaml
+    pub fn new(mapping: HashMap<String, String>) -> Result<Self> {
+        let no_hash = Self {
+            hash: String::new(),
+            mapping,
+        };
+
+        Ok(Self {
+            hash: hash_buffer(to_yaml(&no_hash)?),
+            ..no_hash
+        })
+    }
 }
 
 // --- utils ----

@@ -9,6 +9,7 @@ use std::{
     io,
     path::{self},
 };
+use tokio::task::JoinError;
 
 impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
@@ -70,6 +71,17 @@ impl From<serde_yaml::Error> for OrcaError {
         }
     }
 }
+impl From<JoinError> for OrcaError {
+    fn from(error: JoinError) -> Self {
+        Self {
+            kind: Kind::IoError {
+                source: error.into(),
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+
 impl From<Kind> for OrcaError {
     fn from(error: Kind) -> Self {
         Self { kind: error }
@@ -98,15 +110,18 @@ impl fmt::Debug for OrcaError {
             | Kind::KeyMissing { backtrace, .. }
             | Kind::NoAnnotationFound { backtrace, .. }
             | Kind::NoContainerNames { backtrace, .. }
+            | Kind::NodeNotFound { backtrace, .. }
             | Kind::NoFileName { backtrace, .. }
             | Kind::NoMatchingPodRun { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
+            | Kind::MissingStreamKey { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }
             | Kind::SerdeJsonError { backtrace, .. }
-            | Kind::SerdeYamlError { backtrace, .. } => {
+            | Kind::SerdeYamlError { backtrace, .. }
+            | Kind::TokioJoinError { backtrace, .. } => {
                 write!(f, "{}{}", self.kind, format_stack(backtrace.as_ref()))
             }
         }
