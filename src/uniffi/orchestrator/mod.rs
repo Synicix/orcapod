@@ -66,17 +66,6 @@ pub struct PodRun {
     pub assigned_name: String,
 }
 
-impl PodRun {
-    /// Create a new `PodRun` from a `PodJob` and orchestrator source.
-    pub fn new(pod_job: PodJob, orchestrator_source: String, assigned_name: String) -> Self {
-        Self {
-            pod_job: Arc::new(pod_job),
-            orchestrator_source,
-            assigned_name,
-        }
-    }
-}
-
 /// API for standard behavior of any container orchestration engine supported.
 #[uniffi::export]
 #[async_trait::async_trait]

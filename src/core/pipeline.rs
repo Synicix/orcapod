@@ -256,14 +256,17 @@ impl PipelineBuilder {
     /// 1. If the node is not in the pipeline.nodes, then it is added to the `hash_map` and the key is the node hash
     /// 2. If the node is already in the pipeline.nodes, then the key is the hash + _{`num_matches`} to prevent collision
     pub fn add_node(&mut self, node: impl Into<Node>) -> NodeHandle<'_> {
-        let node = node.into();
-        let hash = node.get_hash();
+        let node_to_insert = node.into();
+        let hash = node_to_insert.get_hash();
 
         // Get the node_key to add to the edge
         let node_key = self.compute_node_key(&hash);
 
         // Insert into node hash_map if does not exist, else skip
-        self.pipeline.nodes.entry(node.get_hash()).or_insert(node);
+        self.pipeline
+            .nodes
+            .entry(node_to_insert.get_hash())
+            .or_insert(node_to_insert);
 
         // Add it to the graph
         self.pipeline.graph.add_node(node_key.clone());
@@ -276,15 +279,15 @@ impl PipelineBuilder {
 
     fn add_edge_from_node(&mut self, from: &str, node: impl Into<Node>) -> Result<NodeHandle> {
         // Check if node exists in the pipeline.nodes
-        let node = node.into();
-        let hash = node.get_hash();
+        let node_to_insert = node.into();
+        let hash = node_to_insert.get_hash();
 
         // Get the node_key to add to the graph
         let node_key = self.compute_node_key(&hash);
         let new_node_idx = self.pipeline.graph.add_node(node_key.clone());
 
         // Insert node into the pipeline.nodes lut if it does not exist
-        self.pipeline.nodes.entry(hash).or_insert(node);
+        self.pipeline.nodes.entry(hash).or_insert(node_to_insert);
 
         self.pipeline.graph.add_edge(
             self.pipeline

@@ -53,7 +53,7 @@ impl DockerPipelineRunner {
 
         // Insert into the list of pipeline runs
         self.pipeline_runs.insert(
-            pipeline_run_arc.clone(),
+            Arc::clone(&pipeline_run_arc),
             PipelineRunInfo {
                 job_manager_send_handle: broadcast::channel::<Message>(1).0,
                 node_tx: HashMap::new(),
@@ -118,7 +118,7 @@ impl DockerPipelineRunner {
         // Spawn the node_manager for this node
         tokio::spawn(Self::start_node_manager(
             node_key.to_owned(),
-            pipeline_run.clone(),
+            Arc::clone(pipeline_run),
             parent_channel_rxs,
             get(&self.pipeline_runs, pipeline_run)?
                 .job_manager_send_handle
@@ -174,11 +174,11 @@ impl DockerPipelineRunner {
         while let Some(result) = futures.next().await {
             let rx_result = match result {
                 Ok(rx_result) => rx_result,
-                Err(e) => {
-                    if e.is_panic() {
-                        eprintln!("Task panicked: {e}");
+                Err(err) => {
+                    if err.is_panic() {
+                        eprintln!("Task panicked: {err}");
                     } else {
-                        eprintln!("Error receiving message: {e}");
+                        eprintln!("Error receiving message: {err}");
                     }
                     continue;
                 }
