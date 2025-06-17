@@ -1,20 +1,13 @@
-#![allow(
-    clippy::missing_docs_in_private_items,
-    clippy::panic_in_result_fn,
-    clippy::unwrap_used,
-    reason = "test code"
-)]
+#![allow(clippy::panic_in_result_fn, clippy::unwrap_used, reason = "test code")]
 //! Tests for pipeline creation functionality.
 //!
 //! This module contains tests that verify the correct creation of pipelines
 //! using the `pipeline` fixture. The tests ensure that the pipeline creation
 //! process completes successfully and outputs the expected results.
-mod fixture;
 
+pub mod fixture;
 use fixture::{pipeline, pipeline_job};
-use orcapod::core::pipeline_runner::docker::DockerPipelineRunner;
-use orcapod::uniffi::error::Result;
-use tokio::runtime::Runtime;
+use orcapod::{core::pipeline_runner::docker::DockerPipelineRunner, uniffi::error::Result};
 
 #[test]
 fn root_nodes() -> Result<()> {
@@ -49,11 +42,13 @@ fn pipeline_job_creation() -> Result<()> {
 
 /// Pipeline Runner Tests
 /// This module contains tests for the pipeline runner functionality.
-#[test]
-fn pipeline_run() -> Result<()> {
+#[tokio::test]
+async fn pipeline_run() -> Result<()> {
     let pipeline_job = pipeline_job()?;
 
     let mut docker_pipeline_runner = DockerPipelineRunner::new();
+
+    let pipeline_run = docker_pipeline_runner.start(pipeline_job)?;
 
     Ok(())
 }

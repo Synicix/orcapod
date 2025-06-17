@@ -8,7 +8,7 @@ use tokio_stream::StreamExt as _;
 use super::PipelineRun;
 use crate::{
     core::{
-        pipeline::{Node, PipelineJob},
+        pipeline::{Node, PipelineJob, PipelineResult},
         util::get,
     },
     uniffi::{
@@ -26,14 +26,16 @@ pub(crate) enum Message {
 }
 
 struct PipelineRunInfo {
+    node_task_join_set: JoinSet<Result<()>>, // Join set to track the tasks for this pipeline run
     job_manager_send_handle: Sender<Message>,
     node_tx: HashMap<String, Sender<Message>>,
+    outputs: HashMap<String, HashMap<String, Input>>, // String is the node key, while hash
 }
 
 /// Docker based pipeline runner meant to execute on a single machine
 #[derive(Default)]
 pub struct DockerPipelineRunner {
-    pipeline_runs: HashMap<Arc<PipelineRun>, PipelineRunInfo>, // For each pipeline run, we have a join set to track the tasks and wait on them
+    pipeline_runs: HashMap<PipelineRun, PipelineRunInfo>, // For each pipeline run, we have a join set to track the tasks and wait on them
 }
 
 impl DockerPipelineRunner {
@@ -53,10 +55,12 @@ impl DockerPipelineRunner {
 
         // Insert into the list of pipeline runs
         self.pipeline_runs.insert(
-            Arc::clone(&pipeline_run_arc),
+            (*pipeline_run_arc).clone(),
             PipelineRunInfo {
                 job_manager_send_handle: broadcast::channel::<Message>(1).0,
                 node_tx: HashMap::new(),
+                node_task_join_set: JoinSet::new(),
+                outputs: HashMap::new(),
             },
         );
 
@@ -69,11 +73,51 @@ impl DockerPipelineRunner {
 
         // Get all the leaf nodes and call the create_task_for_node function for each leaf node
         // This will recursively create all the tasks and channels for the pipeline
+        pipeline.get_leaf_nodes().try_for_each(|node_key| {
+            self.create_task_for_node(node_key, &pipeline_run_arc, &source_tx)
+        })?;
+
         for node_key in pipeline.get_leaf_nodes() {
             self.create_task_for_node(node_key, &pipeline_run_arc, &source_tx)?;
         }
 
+        // Create a task to handle outputs of output nodes in pipeline
+        for node_key in pipeline.output_nodes {}
+
         Ok(pipeline_run)
+    }
+
+    /// Given a pipeline run, wait for all its tasks to complete and return the `PipelineResult`
+    ///
+    /// # Errors
+    /// Will error out if any of the pipeline tasks failed to join
+    pub async fn get_result(&mut self, pipeline_run: &PipelineRun) -> Result<PipelineResult> {
+        // Call join on the join set for the pipeline run
+        let pipeline_run_info =
+            self.pipeline_runs
+                .get_mut(pipeline_run)
+                .context(selector::KeyMissing {
+                    key: pipeline_run.to_string(),
+                })?;
+
+        // Wait for all the tasks to complete
+        while let Some(result) = pipeline_run_info.node_task_join_set.join_next().await {
+            match result {
+                Ok(Ok(())) => {} // Task completed successfully
+                Ok(Err(err)) => {
+                    eprintln!("Task failed: {err}");
+                    return Err(err);
+                }
+                Err(err) => {
+                    eprintln!("Join set error: {err}");
+                    return Err(err.into());
+                }
+            }
+        }
+
+        Ok(PipelineResult {
+            pipeline_job: pipeline_run.pipeline_job.clone(),
+        })
     }
 
     fn create_task_for_node(
@@ -115,16 +159,24 @@ impl DockerPipelineRunner {
         // Create the channel for this node
         let (tx, _) = broadcast::channel::<Message>(1);
 
+        let job_manager_send_rx = get(&self.pipeline_runs, pipeline_run)?
+            .job_manager_send_handle
+            .subscribe();
+
         // Spawn the node_manager for this node
-        tokio::spawn(Self::start_node_manager(
-            node_key.to_owned(),
-            Arc::clone(pipeline_run),
-            parent_channel_rxs,
-            get(&self.pipeline_runs, pipeline_run)?
-                .job_manager_send_handle
-                .subscribe(),
-            tx.clone(),
-        ));
+        self.pipeline_runs
+            .get_mut(pipeline_run)
+            .context(selector::KeyMissing {
+                key: pipeline_run.to_string(),
+            })?
+            .node_task_join_set
+            .spawn(Self::start_node_manager(
+                node_key.to_owned(),
+                Arc::clone(pipeline_run),
+                parent_channel_rxs,
+                job_manager_send_rx,
+                tx.clone(),
+            ));
 
         // Insert it into the the tx into the pipeline_runs hashmap
         self.pipeline_runs
@@ -140,10 +192,6 @@ impl DockerPipelineRunner {
     }
 
     /// For tx: Sender<Message>, we only want to send successfully completed results to the next node
-    #[expect(
-        clippy::excessive_nesting,
-        reason = "This is a complex function that handles multiple tasks and channels"
-    )]
     async fn start_node_manager(
         node_key: String,
         pipeline_run: Arc<PipelineRun>,

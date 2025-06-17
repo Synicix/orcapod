@@ -59,7 +59,7 @@ pub struct Pipeline {
     pub nodes: HashMap<String, Node>,
     /// Strings are unique hashes of the nodes with the _{`num_matches`}
     pub graph: Graph<String, ()>,
-    output_nodes: HashSet<String>,
+    pub output_nodes: HashSet<String>,
 }
 
 impl Pipeline {
@@ -342,4 +342,8 @@ impl NodeHandle<'_> {
         self.pipeline_builder
             .add_edge_from_node(&self.node_key, node)
     }
+}
+
+pub struct PipelineResult {
+    pub pipeline_job: PipelineJob,
 }
