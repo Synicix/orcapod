@@ -6,7 +6,7 @@ use std::{
 
 use crate::uniffi::{
     error::{Kind, OrcaError, Result},
-    model::{Annotation, Input, Mapper, Pod},
+    model::{Annotation, Mapper, PathSet, Pod},
 };
 use petgraph::prelude::NodeIndex;
 use petgraph::{
@@ -166,7 +166,7 @@ pub struct PipelineJob {
     pub pipeline: Pipeline,
     #[serde(serialize_with = "serialize_hashmap")]
     /// Mapping of outside input to keys to be match with the pipeline `input_map`
-    pub input_map: HashMap<String, Input>,
+    pub input_map: HashMap<String, PathSet>,
     annotation: Option<Annotation>,
 }
 
@@ -176,15 +176,15 @@ impl PipelineJob {
     /// Error out if there are missing keys or failed to convert to yaml
     pub fn new(
         pipeline: Pipeline,
-        input_map: HashMap<String, Input>,
+        input_packet: HashMap<String, PathSet>,
         annotation: Option<Annotation>,
     ) -> Result<Self> {
         // Check if input_map has all the requires keys
         let missing_keys = pipeline
             .get_root_nodes()
             .map(|node_id| match pipeline.get_node(node_id)? {
-                Node::Pod(pod) => Ok(find_missing_keys(&input_map, pod.input_stream.keys())),
-                Node::Mapper(mapper) => Ok(find_missing_keys(&input_map, mapper.mapping.keys())),
+                Node::Pod(pod) => Ok(find_missing_keys(&input_packet, pod.input_spec.keys())),
+                Node::Mapper(mapper) => Ok(find_missing_keys(&input_packet, mapper.mapping.keys())),
             })
             .collect::<Result<Vec<Vec<String>>>>()?
             .into_iter()
@@ -194,7 +194,7 @@ impl PipelineJob {
         if !missing_keys.is_empty() {
             return Err(OrcaError {
                 kind: Kind::MissingStreamKey {
-                    input_map,
+                    input_packet,
                     missing_keys,
                     backtrace: Some(Backtrace::capture()),
                 },
@@ -203,7 +203,7 @@ impl PipelineJob {
 
         Ok(Self {
             pipeline,
-            input_map,
+            input_map: input_packet,
             annotation,
             hash: String::new(),
         })
@@ -211,7 +211,7 @@ impl PipelineJob {
 }
 
 fn find_missing_keys<'a>(
-    input_map: &HashMap<String, Input>,
+    input_map: &HashMap<String, PathSet>,
     keys_to_check: impl Iterator<Item = &'a String>,
 ) -> Vec<String> {
     keys_to_check

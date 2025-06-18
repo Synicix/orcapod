@@ -12,8 +12,8 @@ use crate::{
         util::get,
     },
     uniffi::{
-        error::{Result, selector},
-        model::Input,
+        error::{OrcaError, Result, selector},
+        model::PathSet,
     },
 };
 use snafu::OptionExt as _;
@@ -21,15 +21,15 @@ use std::{collections::HashMap, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub(crate) enum Message {
-    NodeOutput(String, HashMap<String, Input>), // String is the parent_node_name, while HashMap is output of the parent node
-    Stop,                                       // Message to halt all operations
+    NodeOutput(String, HashMap<String, PathSet>), // String is the parent_node_name, while HashMap is output of the parent node
+    Stop,                                         // Message to halt all operations
 }
 
 struct PipelineRunInfo {
     node_task_join_set: JoinSet<Result<()>>, // Join set to track the tasks for this pipeline run
     job_manager_send_handle: Sender<Message>,
     node_tx: HashMap<String, Sender<Message>>,
-    outputs: HashMap<String, HashMap<String, Input>>, // String is the node key, while hash
+    outputs: HashMap<String, HashMap<String, PathSet>>, // String is the node key, while hash
 }
 
 /// Docker based pipeline runner meant to execute on a single machine
@@ -74,7 +74,8 @@ impl DockerPipelineRunner {
         // Get all the leaf nodes and call the create_task_for_node function for each leaf node
         // This will recursively create all the tasks and channels for the pipeline
         pipeline.get_leaf_nodes().try_for_each(|node_key| {
-            self.create_task_for_node(node_key, &pipeline_run_arc, &source_tx)
+            self.create_task_for_node(node_key, &pipeline_run_arc, &source_tx)?;
+            Ok::<(), OrcaError>(())
         })?;
 
         for node_key in pipeline.get_leaf_nodes() {
@@ -82,7 +83,7 @@ impl DockerPipelineRunner {
         }
 
         // Create a task to handle outputs of output nodes in pipeline
-        for node_key in pipeline.output_nodes {}
+        // for node_key in pipeline.output_nodes {}
 
         Ok(pipeline_run)
     }

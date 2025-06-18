@@ -18,9 +18,8 @@ use std::{
 use tokio::{sync::broadcast::error::SendError, task::JoinError};
 use uniffi;
 
-use crate::core::pipeline_runner::docker::Message;
+use crate::{core::pipeline_runner::docker::Message, uniffi::model::PathSet};
 
-use super::model::Input;
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
@@ -96,9 +95,9 @@ pub(crate) enum Kind {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display("Input map {input_map:?} missing required stream_key {missing_keys:?}"))]
+    #[snafu(display("Input map {input_packet:?} missing required stream_key {missing_keys:?}"))]
     MissingStreamKey {
-        input_map: HashMap<String, Input>,
+        input_packet: HashMap<String, PathSet>,
         missing_keys: Vec<String>,
         backtrace: Option<Backtrace>,
     },

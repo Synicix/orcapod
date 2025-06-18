@@ -156,10 +156,10 @@ impl PodJob {
     ) -> Result<Self> {
         // Check if input_map has all the required stream_keys
         let missing_keys = pod
-            .input_stream
+            .input_spec
             .keys()
             .filter_map(|key| {
-                if input_map.contains_key(key) {
+                if input_packet.contains_key(key) {
                     None
                 } else {
                     Some(key.to_owned())
@@ -170,14 +170,14 @@ impl PodJob {
         if !missing_keys.is_empty() {
             return Err(OrcaError {
                 kind: Kind::MissingStreamKey {
-                    input_map,
+                    input_packet,
                     missing_keys,
                     backtrace: Some(Backtrace::capture()),
                 },
             });
         }
         // Hash all the input_map blobs
-        input_map = input_map
+        input_packet = input_packet
             .into_iter()
             .map(|(stream_name, stream_input)| match stream_input {
                 PathSet::Unary(blob) => Ok((
