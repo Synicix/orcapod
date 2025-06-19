@@ -208,7 +208,7 @@ pub fn pod_append_name(pod_name: &str) -> Result<Pod> {
         ),
         HashMap::from([(
             "input_text_file".to_owned(),
-            StreamInfo {
+            PathInfo {
                 path: PathBuf::from("/input/input.txt"),
                 match_pattern: r".*\.txt".to_owned(),
             },
@@ -216,7 +216,7 @@ pub fn pod_append_name(pod_name: &str) -> Result<Pod> {
         PathBuf::from("/output"),
         HashMap::from([(
             "output_txt_file".to_owned(),
-            StreamInfo {
+            PathInfo {
                 path: PathBuf::from("/output/input.txt"),
                 match_pattern: r".*\.txt".to_owned(),
             },
@@ -228,7 +228,7 @@ pub fn pod_append_name(pod_name: &str) -> Result<Pod> {
     )
 }
 
-pub fn pipeline() -> Result<Pipeline> {
+pub fn pipeline_builder() -> Result<PipelineBuilder> {
     // Create a simple pipeline where the functions job is to add append their name into the input file
     // Structure: A -> B -> C
 
@@ -243,7 +243,12 @@ pub fn pipeline() -> Result<Pipeline> {
     )]))?;
 
     // Use the builder to create the pipeline
-    let mut pipeline_builder = PipelineBuilder::new();
+    let mut pipeline_builder = PipelineBuilder::new(Some(Annotation {
+        name: "Example Pipeline".to_owned(),
+        description: "This is an example pipeline that appends names to a file.".to_owned(),
+        version: "1.0.0".to_owned(),
+    }));
+
     // Add the first node then chain the rest
     pipeline_builder
         .add_node(pod_a)
@@ -252,9 +257,11 @@ pub fn pipeline() -> Result<Pipeline> {
         .add_child(file_mapper)?
         .add_child(pod_c)?;
 
-    // Convert it into the actual pipeline object
-    // NOTE: Since we didn't set the output_nodes, all the leaf nodes will be the output nodes
-    Ok(pipeline_builder.into())
+    Ok(pipeline_builder)
+}
+
+pub fn pipeline() -> Result<Pipeline> {
+    Ok(pipeline_builder()?.into())
 }
 
 pub fn pipeline_job() -> Result<PipelineJob> {
@@ -263,7 +270,7 @@ pub fn pipeline_job() -> Result<PipelineJob> {
         pipeline()?,
         HashMap::from([(
             "input_text_file".to_owned(),
-            Input::Unary(Blob::new(
+            PathSet::Unary(Blob::new(
                 BlobKind::File,
                 OrcaPath {
                     namespace: "default".to_owned(),

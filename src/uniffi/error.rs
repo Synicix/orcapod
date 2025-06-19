@@ -27,6 +27,22 @@ pub type Result<T, E = OrcaError> = result::Result<T, E>;
 #[snafu(module(selector), visibility(pub(crate)), context(suffix(false)))]
 #[uniffi(flat_error)]
 pub(crate) enum Kind {
+    #[snafu(display(
+        "Disconnected leaf node with key: {}. Should be included in output_nodes",
+        leaf_key
+    ))]
+    DisconnectedLeafNode {
+        node_key: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display(
+        "Disconnected root node with key: {}. Should be included in input_nodes",
+        node_key
+    ))]
+    DisconnectedRootNode {
+        node_key: String,
+        backtrace: Option<Backtrace>,
+    },
     EmptyResponseWhenLoadingContainerAltImage {
         path: PathBuf,
         backtrace: Option<Backtrace>,

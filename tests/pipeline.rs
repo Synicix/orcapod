@@ -6,7 +6,7 @@
 //! process completes successfully and outputs the expected results.
 
 pub mod fixture;
-use fixture::{pipeline, pipeline_job};
+use fixture::{pipeline, pipeline_builder, pipeline_job};
 use orcapod::{core::pipeline_runner::docker::DockerPipelineRunner, uniffi::error::Result};
 
 #[test]
@@ -35,8 +35,31 @@ fn get_parents_key_for_node() -> Result<()> {
 }
 
 #[test]
-fn pipeline_job_creation() -> Result<()> {
-    let pipeline_job = pipeline_job()?;
+fn builder_with_input_nodes() -> Result<()> {
+    pipeline_builder()?;
+    Ok(())
+}
+
+#[test]
+fn test_pipeline_creation() -> Result<()> {
+    let pipeline = pipeline()?;
+
+    assert!(
+        pipeline.annotation.is_some(),
+        "Pipeline annotation is missing."
+    );
+
+    assert!(
+        pipeline.input_nodes.len() == 1,
+        "Pipeline should have exactly one input node."
+    );
+
+    assert!(
+        pipeline.output_nodes.len() == 1,
+        "Pipeline should have exactly one output node."
+    );
+
+    assert!(pipeline.kernel_lut.len() == 4, "Pipeline should have three kernels in the LUT.");
     Ok(())
 }
 

@@ -4,9 +4,12 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use crate::uniffi::{
-    error::{Kind, OrcaError, Result},
-    model::{Annotation, Mapper, PathSet, Pod},
+use crate::{
+    core::pipeline,
+    uniffi::{
+        error::{Kind, OrcaError, Result},
+        model::{Annotation, Mapper, PathSet, Pod},
+    },
 };
 use petgraph::prelude::NodeIndex;
 use petgraph::{
@@ -21,14 +24,14 @@ use super::util::get;
 
 #[derive(Serialize, PartialEq, Debug, Clone)]
 /// Enum to store different types of nodes explicitly
-pub enum Node {
+pub enum Kernel {
     /// Pod node
     Pod(Box<Pod>),
     /// Mapper node
     Mapper(Mapper),
 }
 
-impl Node {
+impl Kernel {
     /// Get the hash of the node
     pub fn get_hash(&self) -> String {
         match self {
@@ -38,12 +41,12 @@ impl Node {
     }
 }
 
-impl From<Pod> for Node {
+impl From<Pod> for Kernel {
     fn from(pod: Pod) -> Self {
         Self::Pod(Box::new(pod))
     }
 }
-impl From<Mapper> for Node {
+impl From<Mapper> for Kernel {
     fn from(mapper: Mapper) -> Self {
         Self::Mapper(mapper)
     }
@@ -54,41 +57,91 @@ impl From<Mapper> for Node {
 pub struct Pipeline {
     hash: String,
     #[serde(skip)]
-    annotation: Option<Annotation>,
+    /// Annotation for the pipeline
+    pub annotation: Option<Annotation>,
     /// String are hashes of the nodes without the _{`num_matches`}
-    pub nodes: HashMap<String, Node>,
+    pub kernel_lut: HashMap<String, Kernel>,
     /// Strings are unique hashes of the nodes with the _{`num_matches`}
     pub graph: Graph<String, ()>,
+    /// Nodes where the input data should be fed into
+    pub input_nodes: HashSet<String>,
+    /// Nodes where the output data should be collected from and outputted.
     pub output_nodes: HashSet<String>,
 }
 
 impl Pipeline {
     /// Creates a new `Pipeline` instance.
-    pub const fn new(
+    /// # Errors
+    /// Will error out if the pipeline is not valid
+    pub fn new(
         annotation: Option<Annotation>,
-        nodes: HashMap<String, Node>,
+        nodes: HashMap<String, Kernel>,
         graph: Graph<String, (), Directed>,
+        input_nodes: HashSet<String>,
         output_nodes: HashSet<String>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let pipeline = Self {
             hash: String::new(), // TODO: Need to implement to yaml then hash that
             annotation,
-            nodes,
+            kernel_lut: nodes,
             graph,
+            input_nodes,
             output_nodes,
-        }
+        };
+
+        pipeline.verify()?;
+        Ok(pipeline)
+    }
+
+    /// Function to verify that the pipeline is valid
+    ///
+    /// # Errors
+    /// Will return an error if
+    /// - There are disconnected root nodes (nodes that have no parents but are not in the `input_nodes`)
+    pub fn verify(&self) -> Result<()> {
+        // Verify that the graph is valid
+
+        // Check if all root nodes are listed in the input_nodes, if not there are disconnected nodes
+        self.get_root_nodes().try_for_each(|node_key| {
+            if self.input_nodes.contains(node_key) {
+                Ok(())
+            } else {
+                Err(OrcaError {
+                    kind: Kind::DisconnectedRootNode {
+                        node_key: node_key.to_owned(),
+                        backtrace: Some(Backtrace::capture()),
+                    },
+                })
+            }
+        })?;
+
+        // Check if all leaf nodes are listed in the output_nodes, if not there are disconnected nodes
+        self.get_leaf_nodes().try_for_each(|node_key| {
+            if self.output_nodes.contains(node_key) {
+                Ok(())
+            } else {
+                Err(OrcaError {
+                    kind: Kind::DisconnectedLeafNode {
+                        node_key: node_key.to_owned(),
+                        backtrace: Some(Backtrace::capture()),
+                    },
+                })
+            }
+        })?;
+
+        Ok(())
     }
 
     /// # Errors
     /// Error out if the `node_key` is not found in the pipeline.nodes
     #[expect(clippy::string_slice, reason = "Should never fail as we are in")]
-    pub fn get_node(&self, node_key: &str) -> Result<&Node> {
+    pub fn get_node(&self, node_key: &str) -> Result<&Kernel> {
         let char_to_cut_at = '_';
 
         let key = node_key
             .rfind(char_to_cut_at)
             .map_or(node_key, |index| &node_key[..index]);
-        get(&self.nodes, &key.to_owned())
+        get(&self.kernel_lut, &key.to_owned())
     }
 
     /// Function to get the root nodes of the pipeline
@@ -139,7 +192,7 @@ impl Pipeline {
 impl PartialEq for Pipeline {
     fn eq(&self, other: &Self) -> bool {
         self.hash == other.hash
-            && self.nodes == other.nodes
+            && self.kernel_lut == other.kernel_lut
             && self.output_nodes == other.output_nodes
     }
 }
@@ -147,6 +200,12 @@ impl PartialEq for Pipeline {
 impl From<PipelineBuilder> for Pipeline {
     fn from(val: PipelineBuilder) -> Self {
         let mut pipeline = val.pipeline;
+
+        if pipeline.input_nodes.is_empty() {
+            // If there are no input nodes, then we need to set the input nodes to the root nodes
+            pipeline.input_nodes = pipeline.get_root_nodes().cloned().collect();
+        }
+
         if pipeline.output_nodes.is_empty() {
             // If there are no output nodes, then we need to set the output nodes to the leaf nodes
             pipeline.output_nodes = pipeline.get_leaf_nodes().cloned().collect();
@@ -183,8 +242,10 @@ impl PipelineJob {
         let missing_keys = pipeline
             .get_root_nodes()
             .map(|node_id| match pipeline.get_node(node_id)? {
-                Node::Pod(pod) => Ok(find_missing_keys(&input_packet, pod.input_spec.keys())),
-                Node::Mapper(mapper) => Ok(find_missing_keys(&input_packet, mapper.mapping.keys())),
+                Kernel::Pod(pod) => Ok(find_missing_keys(&input_packet, pod.input_spec.keys())),
+                Kernel::Mapper(mapper) => {
+                    Ok(find_missing_keys(&input_packet, mapper.mapping.keys()))
+                }
             })
             .collect::<Result<Vec<Vec<String>>>>()?
             .into_iter()
@@ -236,8 +297,9 @@ impl Default for PipelineBuilder {
             pipeline: Pipeline {
                 hash: String::new(),
                 annotation: None,
-                nodes: HashMap::new(),
+                kernel_lut: HashMap::new(),
                 graph: Graph::new(),
+                input_nodes: HashSet::new(),
                 output_nodes: HashSet::new(),
             },
         }
@@ -246,8 +308,17 @@ impl Default for PipelineBuilder {
 
 impl PipelineBuilder {
     /// Creates a new `PipelineBuilder` instance.
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(annotation: Option<Annotation>) -> Self {
+        Self {
+            pipeline: Pipeline {
+                hash: String::new(), // TODO: Need to implement to yaml then hash that
+                annotation,
+                kernel_lut: HashMap::new(),
+                graph: Graph::new(),
+                input_nodes: HashSet::new(),
+                output_nodes: HashSet::new(),
+            },
+        }
     }
 
     /// Add nodes to the pipeline and return key to put in edges
@@ -255,7 +326,7 @@ impl PipelineBuilder {
     /// Cases:
     /// 1. If the node is not in the pipeline.nodes, then it is added to the `hash_map` and the key is the node hash
     /// 2. If the node is already in the pipeline.nodes, then the key is the hash + _{`num_matches`} to prevent collision
-    pub fn add_node(&mut self, node: impl Into<Node>) -> NodeHandle<'_> {
+    pub fn add_node(&mut self, node: impl Into<Kernel>) -> NodeHandle<'_> {
         let node_to_insert = node.into();
         let hash = node_to_insert.get_hash();
 
@@ -264,7 +335,7 @@ impl PipelineBuilder {
 
         // Insert into node hash_map if does not exist, else skip
         self.pipeline
-            .nodes
+            .kernel_lut
             .entry(node_to_insert.get_hash())
             .or_insert(node_to_insert);
 
@@ -277,7 +348,7 @@ impl PipelineBuilder {
         }
     }
 
-    fn add_edge_from_node(&mut self, from: &str, node: impl Into<Node>) -> Result<NodeHandle> {
+    fn add_edge_from_node(&mut self, from: &str, node: impl Into<Kernel>) -> Result<NodeHandle> {
         // Check if node exists in the pipeline.nodes
         let node_to_insert = node.into();
         let hash = node_to_insert.get_hash();
@@ -287,7 +358,10 @@ impl PipelineBuilder {
         let new_node_idx = self.pipeline.graph.add_node(node_key.clone());
 
         // Insert node into the pipeline.nodes lut if it does not exist
-        self.pipeline.nodes.entry(hash).or_insert(node_to_insert);
+        self.pipeline
+            .kernel_lut
+            .entry(hash)
+            .or_insert(node_to_insert);
 
         self.pipeline.graph.add_edge(
             self.pipeline
@@ -314,7 +388,7 @@ impl PipelineBuilder {
         // Check if node is already in the pipeline, if so then we need to add a numerator to the hash
         let num_matches = self
             .pipeline
-            .nodes
+            .kernel_lut
             .iter()
             .filter(|(key, _)| *key == node_hash)
             .count();
@@ -338,7 +412,7 @@ impl NodeHandle<'_> {
     /// Add an node as a child to the current `node_key`
     /// # Errors
     /// Shouldn't error as long the self is in the graph
-    pub fn add_child(&mut self, node: impl Into<Node>) -> Result<NodeHandle<'_>> {
+    pub fn add_child(&mut self, node: impl Into<Kernel>) -> Result<NodeHandle<'_>> {
         self.pipeline_builder
             .add_edge_from_node(&self.node_key, node)
     }

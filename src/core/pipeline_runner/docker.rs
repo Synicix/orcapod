@@ -8,7 +8,7 @@ use tokio_stream::StreamExt as _;
 use super::PipelineRun;
 use crate::{
     core::{
-        pipeline::{Node, PipelineJob, PipelineResult},
+        pipeline::{Kernel, PipelineJob, PipelineResult},
         util::get,
     },
     uniffi::{
@@ -243,7 +243,7 @@ impl DockerPipelineRunner {
                     // Inputs from parents are ready, thus we need to process them if they are already computed and cached
                     // NOTE: Cache is TODO
                     match node {
-                        Node::Pod(pod) => {
+                        Kernel::Pod(pod) => {
                             // TODO check if there is already a computed results for this pod
 
                             // Launch the pod with a copy the tx and manager_tx for success and failure reporting respectively
@@ -260,7 +260,7 @@ impl DockerPipelineRunner {
                                 tx_for_task.send(Message::NodeOutput(node_key_clone, input_map))
                             });
                         }
-                        Node::Mapper(mapper) => {
+                        Kernel::Mapper(mapper) => {
                             // For mapper, we just apply it directly
                             let output_map = mapper
                                 .mapping
