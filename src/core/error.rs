@@ -115,7 +115,8 @@ fn format_stack(backtrace: Option<&Backtrace>) -> String {
 impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            Kind::DisconnectedRootNode { backtrace, .. }
+            Kind::DisconnectedLeafNode { backtrace, .. }
+            | Kind::DisconnectedRootNode { backtrace, .. }
             | Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
             | Kind::FailedToExtractRunInfo { backtrace, .. }
             | Kind::FailedToStartPod { backtrace, .. }

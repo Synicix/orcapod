@@ -29,7 +29,7 @@ pub type Result<T, E = OrcaError> = result::Result<T, E>;
 pub(crate) enum Kind {
     #[snafu(display(
         "Disconnected leaf node with key: {}. Should be included in output_nodes",
-        leaf_key
+        node_key
     ))]
     DisconnectedLeafNode {
         node_key: String,
