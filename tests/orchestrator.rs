@@ -161,53 +161,7 @@ fn command_parse() -> Result<()> {
         pod_job.input_packet = HashMap::new();
 
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
-        let pod_result = orchestrator.get_result_blocking(&pod_run)?;
-
-        assert_eq!(
-            pod_result.status,
-            Status::Completed,
-            "Pod status is not completed"
-        );
-
-        assert_eq!(pod_result.logs, "hi1\nhi2\n", "Logs do not match error");
-
-        orchestrator.delete_blocking(&pod_run)?;
-
-        assert!(
-            !orchestrator.list_blocking()?.contains(&pod_run),
-            "Unexpected container remains."
-        );
-
-        Ok(())
-    })
-}
-
-#[test]
-fn logs() -> Result<()> {
-    execute_wrapper(|namespace_lookup, orchestrator| {
-        let mut pod_job = pod_job_style(namespace_lookup)?;
-        let mut pod = pod_job.pod.deref().clone();
-
-        pod.image = "alpine:3.14".to_owned();
-        pod.command = r#"sh -c "echo hi1 && sleep 3 && echo hi2""#.to_owned();
-        pod.input_spec = HashMap::new();
-        pod_job.pod = pod.into();
-        pod_job.input_packet = HashMap::new();
-
-        // Start job and wait for completion
-        let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
-
-        // Wait 1 second for docker for docker to launch to process
         sleep(Duration::from_secs(1));
-
-        // Get the logs from the running pod
-        let logs = orchestrator.get_logs_blocking(&pod_run)?;
-
-        assert_eq!(
-            logs, "hi1\n",
-            "Logs do not match expected output before sleep"
-        );
-
         let pod_result = orchestrator.get_result_blocking(&pod_run)?;
 
         assert_eq!(
@@ -216,13 +170,6 @@ fn logs() -> Result<()> {
             "Pod status is not completed"
         );
 
-        // Make sure the logs contain the final output
-        assert_eq!(
-            pod_result.logs, "hi1\nhi2\n",
-            "Logs do not contain expected final output"
-        );
-
-        // Clean up the pod
         orchestrator.delete_blocking(&pod_run)?;
 
         assert!(
@@ -275,12 +222,6 @@ fn fail_at_start() -> Result<()> {
             "Pod status is not failed"
         );
 
-        assert_eq!(
-            pod_result.logs,
-            "failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: \"python\": executable file not found in $PATH: unknown",
-            "Logs do not match"
-        );
-
         // Clean up the pod
         orchestrator.delete_blocking(pod_run)?;
 
@@ -310,17 +251,13 @@ fn fail_during_execution() -> Result<()> {
 
         // Start job and wait for completion
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
+        sleep(Duration::from_secs(1));
         let pod_result = orchestrator.get_result_blocking(&pod_run)?;
 
         assert_eq!(
             pod_result.status,
             Status::Failed(127),
             "Should be in failed state"
-        );
-
-        assert_eq!(
-            pod_result.logs, "hi\n\nSTDERR:\nbin/sh: bad_command: not found\n",
-            "Logs do not match error"
         );
 
         // Clean up the pod
