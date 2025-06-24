@@ -223,10 +223,10 @@ impl PodResult {
     pub fn new(
         annotation: Option<Annotation>,
         pod_job: Arc<PodJob>,
-        assigned_name: String,
+        assigned_name: String, // Skip
         status: Status,
-        created: u64,
-        terminated: u64,
+        created: u64, // skip
+        terminated: u64, // skip
         logs: String,
     ) -> Result<Self> {
         let pod_result_no_hash = Self {

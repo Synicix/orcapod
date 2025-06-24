@@ -16,7 +16,9 @@ use orcapod::uniffi::{
     model::URI,
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
-use std::{collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc, thread::sleep, time::Duration,
+};
 use tokio::runtime::Runtime;
 
 fn basic_test<T>(start: T) -> Result<()>
@@ -152,7 +154,7 @@ fn command_parse() -> Result<()> {
 
         let mut pod = pod_job.pod.deref().clone();
         pod.image = "alpine:3.14".to_owned();
-        pod.command = r#"echo 'hi 1' && echo "hi 2""#.to_owned();
+        pod.command = r#"sh -c "echo hi1 && echo 'hi2'"""#.to_owned();
         pod.input_spec = HashMap::new();
         pod_job.pod = pod.into();
 
@@ -167,11 +169,60 @@ fn command_parse() -> Result<()> {
             "Pod status is not completed"
         );
 
-        assert_eq!(
-            pod_result.logs, "hi 1 && echo hi 2\n",
-            "Logs do not match error"
+        assert_eq!(pod_result.logs, "hi1\nhi2\n", "Logs do not match error");
+
+        orchestrator.delete_blocking(&pod_run)?;
+
+        assert!(
+            !orchestrator.list_blocking()?.contains(&pod_run),
+            "Unexpected container remains."
         );
 
+        Ok(())
+    })
+}
+
+#[test]
+fn logs() -> Result<()> {
+    execute_wrapper(|namespace_lookup, orchestrator| {
+        let mut pod_job = pod_job_style(namespace_lookup)?;
+        let mut pod = pod_job.pod.deref().clone();
+
+        pod.image = "alpine:3.14".to_owned();
+        pod.command = r#"sh -c "echo hi1 && sleep 3 && echo hi2""#.to_owned();
+        pod.input_spec = HashMap::new();
+        pod_job.pod = pod.into();
+        pod_job.input_packet = HashMap::new();
+
+        // Start job and wait for completion
+        let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
+
+        // Wait 1 second for docker for docker to launch to process
+        sleep(Duration::from_secs(1));
+
+        // Get the logs from the running pod
+        let logs = orchestrator.get_logs_blocking(&pod_run)?;
+
+        assert_eq!(
+            logs, "hi1\n",
+            "Logs do not match expected output before sleep"
+        );
+
+        let pod_result = orchestrator.get_result_blocking(&pod_run)?;
+
+        assert_eq!(
+            pod_result.status,
+            Status::Completed,
+            "Pod status is not completed"
+        );
+
+        // Make sure the logs contain the final output
+        assert_eq!(
+            pod_result.logs, "hi1\nhi2\n",
+            "Logs do not contain expected final output"
+        );
+
+        // Clean up the pod
         orchestrator.delete_blocking(&pod_run)?;
 
         assert!(

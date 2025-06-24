@@ -66,6 +66,9 @@ impl Orchestrator for LocalDockerOrchestrator {
     fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult> {
         self.async_driver.block_on(self.get_result(pod_run))
     }
+    fn get_logs_blocking(&self, pod_run: &PodRun) -> Result<String> {
+        self.async_driver.block_on(self.get_logs(pod_run))
+    }
     #[expect(
         clippy::try_err,
         reason = r#"
@@ -289,6 +292,42 @@ impl Orchestrator for LocalDockerOrchestrator {
                 })?,
             logs,
         )
+    }
+
+    async fn get_logs(&self, pod_run: &PodRun) -> Result<String> {
+        let mut std_out = Vec::new();
+        let mut std_err = Vec::new();
+
+        self.api
+            .logs::<String>(
+                &pod_run.assigned_name,
+                Some(LogsOptions {
+                    stdout: true,
+                    stderr: true,
+                    ..Default::default()
+                }),
+            )
+            .try_collect::<Vec<_>>()
+            .await?
+            .iter()
+            .for_each(|log_output| match log_output {
+                LogOutput::StdOut { message } => {
+                    std_out.extend(message.to_vec());
+                }
+                LogOutput::StdErr { message } => {
+                    std_err.extend(message.to_vec());
+                }
+                LogOutput::StdIn { .. } => todo!(),
+                LogOutput::Console { .. } => todo!(),
+            });
+
+        let mut logs = String::from_utf8_lossy(&std_out).to_string();
+        if !std_err.is_empty() {
+            logs.push_str("\nSTDERR:\n");
+            logs.push_str(&String::from_utf8_lossy(&std_err));
+        }
+
+        Ok(logs)
     }
 }
 

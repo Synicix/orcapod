@@ -115,6 +115,10 @@ pub trait Orchestrator: Send + Sync {
     ///
     /// Will return `Err` if there is an issue creating a pod result.
     fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult>;
+    /// Get hte logs for a specific pod run.
+    /// # Errors
+    /// Will return `Err` if there is an issue getting logs.
+    fn get_logs_blocking(&self, pod_run: &PodRun) -> Result<String>;
     /// How to asynchronously start containers with an alternate image.
     ///
     /// # Errors
@@ -160,6 +164,8 @@ pub trait Orchestrator: Send + Sync {
     ///
     /// Will return `Err` if there is an issue creating a pod result.
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult>;
+    /// Get the logs for a specific pod run.
+    async fn get_logs(&self, pod_run: &PodRun) -> Result<String>;
 }
 
 /// Orchestration implementation for Docker backend.
