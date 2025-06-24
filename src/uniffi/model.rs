@@ -225,7 +225,7 @@ impl PodResult {
         pod_job: Arc<PodJob>,
         assigned_name: String, // Skip
         status: Status,
-        created: u64, // skip
+        created: u64,    // skip
         terminated: u64, // skip
         logs: String,
     ) -> Result<Self> {
