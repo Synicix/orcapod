@@ -256,8 +256,9 @@ impl Orchestrator for LocalDockerOrchestrator {
                 LogOutput::StdErr { message } => {
                     std_err.extend(message.to_vec());
                 }
-                LogOutput::StdIn { .. } => todo!(),
-                LogOutput::Console { .. } => todo!(),
+                LogOutput::StdIn { .. } | LogOutput::Console { .. } => {
+                    // Ignore stdin logs, as they are not relevant for our use case
+                }
             });
 
         let mut logs = String::from_utf8_lossy(&std_out).to_string();
