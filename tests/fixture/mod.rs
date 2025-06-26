@@ -8,11 +8,16 @@
 )]
 
 use names::{Generator, Name};
-use orcapod::uniffi::{
-    error::Result,
-    model::{Annotation, Blob, BlobKind, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
-    orchestrator::Status,
-    store::{ModelID, ModelInfo, Store},
+use orcapod::{
+    core::pipeline::{Pipeline, PipelineBuilder, PipelineJob},
+    uniffi::{
+        error::Result,
+        model::{
+            Annotation, Blob, BlobKind, Mapper, PathInfo, PathSet, Pod, PodJob, PodResult, URI,
+        },
+        orchestrator::Status,
+        store::{ModelID, ModelInfo, Store},
+    },
 };
 use std::{
     collections::HashMap,
@@ -267,7 +272,7 @@ pub fn pipeline_job() -> Result<PipelineJob> {
             "input_text_file".to_owned(),
             PathSet::Unary(Blob::new(
                 BlobKind::File,
-                OrcaPath {
+                URI {
                     namespace: "default".to_owned(),
                     path: PathBuf::from("data/input.txt"),
                 },

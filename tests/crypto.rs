@@ -43,22 +43,13 @@ fn complex_hash() -> Result<()> {
 fn nested_dir_hash() -> Result<()> {
     let namespace_lookup = HashMap::from([("default".to_owned(), PathBuf::from("./tests"))]);
 
-    let mut pod_style = pod_style()?;
-    pod_style.input_spec = HashMap::from([(
-        "nested_dir".into(),
-        PathInfo {
-            path: PathBuf::from("/input"),
-            match_pattern: r"\/".to_owned(),
-        },
-    )]);
-
     let pod_job = PodJob::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod job.".to_owned(),
             version: "0.1.0".to_owned(),
         }),
-        pod_style.into(),
+        pod_style()?.into(),
         HashMap::from([(
             "nested_dir".to_owned(),
             PathSet::Unary(Blob {
