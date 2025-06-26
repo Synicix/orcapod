@@ -8,6 +8,7 @@
 pub mod fixture;
 use fixture::{pipeline, pipeline_builder, pipeline_job};
 use orcapod::{core::pipeline_runner::docker::DockerPipelineRunner, uniffi::error::Result};
+use tokio::net::unix::pipe;
 
 #[test]
 fn root_nodes() -> Result<()> {
@@ -41,7 +42,7 @@ fn builder_with_input_nodes() -> Result<()> {
 }
 
 #[test]
-fn test_pipeline_creation() -> Result<()> {
+fn pipeline_creation() -> Result<()> {
     let pipeline = pipeline()?;
 
     assert!(
@@ -59,7 +60,56 @@ fn test_pipeline_creation() -> Result<()> {
         "Pipeline should have exactly one output node."
     );
 
-    assert!(pipeline.kernel_lut.len() == 4, "Pipeline should have three kernels in the LUT.");
+    assert!(
+        pipeline.kernel_lut.len() == 4,
+        "Pipeline should have three kernels in the LUT."
+    );
+    Ok(())
+}
+
+#[test]
+fn unconnected_root_nodes() -> Result<()> {
+    let mut pipeline = pipeline_builder()?.pipeline;
+    // Set the output nodes to all leaves of the node
+    pipeline.output_nodes = pipeline.get_leaf_nodes().cloned().collect();
+
+    // Run verify and make sure it fails
+    assert!(
+        pipeline.verify().is_err(),
+        "Pipeline verification should fail when input_nodes nodes are not connected to root nodes."
+    );
+
+    // Fix the input nodes
+    pipeline.input_nodes = pipeline.get_root_nodes().cloned().collect();
+
+    // Verify should pass now
+    assert!(
+        pipeline.verify().is_ok(),
+        "Pipeline verification should pass after fixing input nodes."
+    );
+    Ok(())
+}
+
+#[test]
+fn dangling_child_nodes() -> Result<()> {
+    let mut pipeline = pipeline_builder()?.pipeline;
+    // Set the input nodes to root nodes
+    pipeline.input_nodes = pipeline.get_root_nodes().cloned().collect();
+
+    // Run verify to make sure it fails
+    assert!(
+        pipeline.verify().is_err(),
+        "Pipeline verification should fail when output nodes doesn't include all children"
+    );
+
+    // Fix the output nodes
+    pipeline.output_nodes = pipeline.get_leaf_nodes().cloned().collect();
+
+    // Verify should pass now
+    assert!(
+        pipeline.verify().is_ok(),
+        "Pipeline verification should pass after fixing output nodes."
+    );
     Ok(())
 }
 

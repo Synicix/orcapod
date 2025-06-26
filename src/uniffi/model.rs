@@ -357,35 +357,6 @@ pub enum BlobKind {
     Directory,
 }
 
-/// Mapper
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
-pub struct Mapper {
-    /// Hash of the Mapper
-    pub hash: String,
-    #[serde(serialize_with = "serialize_hashmap")]
-    /**
-    Mapping of `input_stream_keys` to `output_stream_keys` of the mapper
-    */
-    pub mapping: HashMap<String, String>,
-}
-
-impl Mapper {
-    /// New function for mapping that computes the hash for
-    /// # Errors
-    /// Will error if it fails to convert to yaml
-    pub fn new(mapping: HashMap<String, String>) -> Result<Self> {
-        let no_hash = Self {
-            hash: String::new(),
-            mapping,
-        };
-
-        Ok(Self {
-            hash: hash_buffer(to_yaml(&no_hash)?),
-            ..no_hash
-        })
-    }
-}
-
 // --- utils ----
 
 uniffi::custom_type!(PathBuf, String, {

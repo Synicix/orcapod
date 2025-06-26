@@ -274,6 +274,7 @@ impl DockerPipelineRunner {
                             // Send the output via the channel
                             tx.send(Message::NodeOutput(node_key.clone(), output_map))?;
                         }
+                        Kernel::Joiner(joiner) => todo!(),
                     }
                 }
                 Message::Stop => {

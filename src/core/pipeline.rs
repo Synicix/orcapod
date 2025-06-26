@@ -1,12 +1,15 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     backtrace::Backtrace,
     collections::{HashMap, HashSet},
 };
 
-use crate::uniffi::{
-    error::{Kind, OrcaError, Result},
-    model::{Annotation, Mapper, PathSet, Pod},
+use crate::{
+    core::{crypto::hash_buffer, model::to_yaml},
+    uniffi::{
+        error::{Kind, OrcaError, Result},
+        model::{Annotation, PathSet, Pod},
+    },
 };
 use petgraph::prelude::NodeIndex;
 use petgraph::{
@@ -19,6 +22,61 @@ use crate::core::model::serialize_hashmap;
 
 use super::util::get;
 
+/// Pipeline Components
+/// Mapper
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+pub struct Mapper {
+    /// Hash of the Mapper
+    pub hash: String,
+    #[serde(serialize_with = "serialize_hashmap")]
+    /**
+    Mapping of `input_stream_keys` to `output_stream_keys` of the mapper
+    */
+    pub mapping: HashMap<String, String>,
+}
+
+impl Mapper {
+    /// New function for mapping that computes the hash for
+    /// # Errors
+    /// Will error if it fails to convert to yaml
+    pub fn new(mapping: HashMap<String, String>) -> Result<Self> {
+        let no_hash = Self {
+            hash: String::new(),
+            mapping,
+        };
+
+        Ok(Self {
+            hash: hash_buffer(to_yaml(&no_hash)?),
+            ..no_hash
+        })
+    }
+}
+
+#[derive(Serialize, PartialEq, Eq, Debug, Clone)]
+pub struct Joiner {
+    hash: String,
+    /// Storage buffer to store the results from n parent nodes +
+    buffer: HashMap<String, Vec<HashMap<String, PathSet>>>,
+}
+
+impl Joiner {
+    fn new(mut parent_hashes: Vec<String>) -> Self {
+        // Sort the parent hashes to ensure consistent ordering
+        parent_hashes.sort();
+
+        // Combine all parent hashes into a single hash
+        let mut buffer = String::new();
+        for hash in &parent_hashes {
+            buffer.push_str(hash);
+        }
+
+        Self {
+            hash: hash_buffer(buffer.as_bytes()),
+            buffer: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Serialize, PartialEq, Debug, Clone)]
 /// Enum to store different types of nodes explicitly
 pub enum Kernel {
@@ -26,6 +84,7 @@ pub enum Kernel {
     Pod(Box<Pod>),
     /// Mapper node
     Mapper(Mapper),
+    Joiner(Joiner),
 }
 
 impl Kernel {
@@ -34,6 +93,7 @@ impl Kernel {
         match self {
             Self::Pod(pod) => pod.hash.clone(),
             Self::Mapper(mapper) => mapper.hash.clone(),
+            Self::Joiner(joiner) => joiner.hash.clone(),
         }
     }
 }
@@ -243,6 +303,7 @@ impl PipelineJob {
                 Kernel::Mapper(mapper) => {
                     Ok(find_missing_keys(&input_packet, mapper.mapping.keys()))
                 }
+                Kernel::Joiner(_) => Ok(Vec::<String>::new()),
             })
             .collect::<Result<Vec<Vec<String>>>>()?
             .into_iter()
@@ -285,7 +346,8 @@ fn find_missing_keys<'a>(
 
 /// Helper struct to assist in defining a pipeline in Rust
 pub struct PipelineBuilder {
-    pipeline: Pipeline,
+    /// Internal representation of the pipeline being built
+    pub pipeline: Pipeline,
 }
 
 impl Default for PipelineBuilder {
@@ -416,5 +478,6 @@ impl NodeHandle<'_> {
 }
 
 pub struct PipelineResult {
+    /// Reference to the pipeline job
     pub pipeline_job: PipelineJob,
 }

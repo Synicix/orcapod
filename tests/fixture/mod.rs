@@ -9,12 +9,10 @@
 
 use names::{Generator, Name};
 use orcapod::{
-    core::pipeline::{Pipeline, PipelineBuilder, PipelineJob},
+    core::pipeline::{Mapper, Pipeline, PipelineBuilder, PipelineJob},
     uniffi::{
         error::Result,
-        model::{
-            Annotation, Blob, BlobKind, Mapper, PathInfo, PathSet, Pod, PodJob, PodResult, URI,
-        },
+        model::{Annotation, Blob, BlobKind, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
         orchestrator::Status,
         store::{ModelID, ModelInfo, Store},
     },
