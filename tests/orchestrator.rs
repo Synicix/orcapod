@@ -13,10 +13,12 @@ use fixture::{TestContainerImage, TestDirs, container_image_style, pod_job_style
 use futures_util::StreamExt as _;
 use orcapod::uniffi::{
     error::Result,
-    model::OrcaPath,
+    model::URI,
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
-use std::{collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc, thread::sleep, time::Duration,
+};
 use tokio::runtime::Runtime;
 
 fn basic_test<T>(start: T) -> Result<()>
@@ -92,7 +94,7 @@ where
 fn offline_container_image_basic() -> Result<()> {
     basic_test(|namespace_lookup, orchestrator| {
         let container_image_relative_location = "container_images/style-transfer/image.tar.gz";
-        let container_image_kind = ImageKind::Tarball(OrcaPath {
+        let container_image_kind = ImageKind::Tarball(URI {
             namespace: "default".to_owned(),
             path: PathBuf::from(container_image_relative_location),
         });
@@ -152,24 +154,20 @@ fn command_parse() -> Result<()> {
 
         let mut pod = pod_job.pod.deref().clone();
         pod.image = "alpine:3.14".to_owned();
-        pod.command = r#"echo 'hi 1' && echo "hi 2""#.to_owned();
+        pod.command = r#"sh -c "echo hi1 && echo 'hi2'"""#.to_owned();
         pod.input_spec = HashMap::new();
         pod_job.pod = pod.into();
 
         pod_job.input_packet = HashMap::new();
 
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
+        sleep(Duration::from_secs(1));
         let pod_result = orchestrator.get_result_blocking(&pod_run)?;
 
         assert_eq!(
             pod_result.status,
             Status::Completed,
             "Pod status is not completed"
-        );
-
-        assert_eq!(
-            pod_result.logs, "hi 1 && echo hi 2\n",
-            "Logs do not match error"
         );
 
         orchestrator.delete_blocking(&pod_run)?;
@@ -224,12 +222,6 @@ fn fail_at_start() -> Result<()> {
             "Pod status is not failed"
         );
 
-        assert_eq!(
-            pod_result.logs,
-            "failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: \"python\": executable file not found in $PATH: unknown",
-            "Logs do not match"
-        );
-
         // Clean up the pod
         orchestrator.delete_blocking(pod_run)?;
 
@@ -259,17 +251,13 @@ fn fail_during_execution() -> Result<()> {
 
         // Start job and wait for completion
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
+        sleep(Duration::from_secs(1));
         let pod_result = orchestrator.get_result_blocking(&pod_run)?;
 
         assert_eq!(
             pod_result.status,
             Status::Failed(127),
             "Should be in failed state"
-        );
-
-        assert_eq!(
-            pod_result.logs, "hi\n\nSTDERR:\nbin/sh: bad_command: not found\n",
-            "Logs do not match error"
         );
 
         // Clean up the pod

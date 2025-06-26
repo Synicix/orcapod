@@ -1,6 +1,6 @@
 use crate::uniffi::{
     error::Result,
-    model::{OrcaPath, PodJob, PodResult},
+    model::{PodJob, PodResult, URI},
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
@@ -12,7 +12,7 @@ pub enum ImageKind {
     /// `{server.com/}{name}:{tag}`. Server is optional e.g. (`alpine:latest`).
     Published(String),
     /// A packaged compute environment of image+tag as a tarball.
-    Tarball(OrcaPath),
+    Tarball(URI),
 }
 /// Status of a particular compute run.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
@@ -25,7 +25,7 @@ pub enum Status {
     Completed,
     /// Run failed with the provided error code.
     Failed(i16),
-    /// Catch all for all undefine behavior
+    /// Catch all for all undefined behavior
     Unknown,
     /// No status set.
     #[default]
@@ -115,6 +115,10 @@ pub trait Orchestrator: Send + Sync {
     ///
     /// Will return `Err` if there is an issue creating a pod result.
     fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult>;
+    /// Get the logs for a specific pod run.
+    /// # Errors
+    /// Will return `Err` if there is an issue getting logs.
+    fn get_logs_blocking(&self, pod_run: &PodRun) -> Result<String>;
     /// How to asynchronously start containers with an alternate image.
     ///
     /// # Errors
@@ -160,6 +164,8 @@ pub trait Orchestrator: Send + Sync {
     ///
     /// Will return `Err` if there is an issue creating a pod result.
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult>;
+    /// Get the logs for a specific pod run.
+    async fn get_logs(&self, pod_run: &PodRun) -> Result<String>;
 }
 
 /// Orchestration implementation for Docker backend.

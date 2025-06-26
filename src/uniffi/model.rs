@@ -3,7 +3,7 @@ use crate::{
         crypto::{hash_blob, hash_buffer},
         model::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
-            serialize_pod, serialize_pod_job, to_yaml,
+            to_yaml,
         },
     },
     uniffi::{error::Result, orchestrator::Status},
@@ -38,10 +38,9 @@ pub enum ModelType {
 #[uniffi::export(Display)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
-    #[serde(skip)]
     pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
-    #[serde(skip)]
+    #[serde(default)]
     pub hash: String,
     /// Reproducible environment for compute.
     pub image: String,
@@ -114,19 +113,18 @@ impl Pod {
 #[uniffi::export(Display)]
 pub struct PodJob {
     /// Metadata that doesn't affect reproducibility.
-    #[serde(skip)]
     pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
-    #[serde(skip)]
+    #[serde(default)]
     pub hash: String,
     /// A pod to base the pod job on.
-    #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
+    #[serde(deserialize_with = "deserialize_pod")]
     pub pod: Arc<Pod>,
     /// Attached, external input streams.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_packet: HashMap<String, PathSet>,
     /// Attached, external output directory.
-    pub output_dir: OrcaPath,
+    pub output_dir: URI,
     /// Maximum allowable cores in fractional cores for the computation.
     pub cpu_limit: f32,
     /// Maximum allowable memory in bytes for the computation.
@@ -148,7 +146,7 @@ impl PodJob {
         annotation: Option<Annotation>,
         pod: Arc<Pod>,
         mut input_packet: HashMap<String, PathSet>,
-        output_dir: OrcaPath,
+        output_dir: URI,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
@@ -216,16 +214,12 @@ impl PodJob {
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct PodResult {
     /// Metadata that doesn't affect reproducibility.
-    #[serde(skip)]
     pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
-    #[serde(skip)]
+    #[serde(default)]
     pub hash: String,
     /// A pod job that originated the pod result.
-    #[serde(
-        serialize_with = "serialize_pod_job",
-        deserialize_with = "deserialize_pod_job"
-    )]
+    #[serde(deserialize_with = "deserialize_pod_job")]
     pub pod_job: Arc<PodJob>,
     /// Name given by orchestrator.
     pub assigned_name: String,
@@ -236,6 +230,7 @@ pub struct PodResult {
     /// Time in epoch when terminated in seconds.
     pub terminated: u64,
     /// Output logs of container
+    #[serde(default)]
     pub logs: String,
 }
 
@@ -248,10 +243,10 @@ impl PodResult {
     pub fn new(
         annotation: Option<Annotation>,
         pod_job: Arc<PodJob>,
-        assigned_name: String,
+        assigned_name: String, // Skip
         status: Status,
-        created: u64,
-        terminated: u64,
+        created: u64,    // skip
+        terminated: u64, // skip
         logs: String,
     ) -> Result<Self> {
         let pod_result_no_hash = Self {
@@ -264,6 +259,7 @@ impl PodResult {
             terminated,
             logs,
         };
+
         Ok(Self {
             hash: hash_buffer(to_yaml(&pod_result_no_hash)?),
             ..pod_result_no_hash
@@ -310,7 +306,8 @@ pub struct PathInfo {
     /// Naming pattern for the stream.
     pub match_pattern: String,
 }
-/// Input options.
+/// A set of BLOBs, either a single BLOB or a collection of BLOBs.
+/// Mainly use for input
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum PathSet {
@@ -321,7 +318,7 @@ pub enum PathSet {
 }
 /// Location of BLOB data.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct OrcaPath {
+pub struct URI {
     /// Namespace alias.
     pub namespace: String,
     /// Path within namespace.
@@ -334,7 +331,7 @@ pub struct Blob {
     /// BLOB available options.
     pub kind: BlobKind,
     /// BLOB location.
-    pub location: OrcaPath,
+    pub location: URI,
     /// BLOB contents checksum.
     pub checksum: String,
 }

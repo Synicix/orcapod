@@ -1,8 +1,11 @@
 use crate::{
-    core::{orchestrator::docker::RE_IMAGE_TAG, util::get},
+    core::{
+        orchestrator::{ASYNC_RUNTIME, docker::RE_IMAGE_TAG},
+        util::get,
+    },
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::{Pod, PodJob, PodResult},
+        model::{PodJob, PodResult},
         orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo},
     },
 };
@@ -17,7 +20,7 @@ use derive_more::Display;
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
 use snafu::{OptionExt as _, ResultExt as _, futures::TryFutureExt as _};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::{fs::File, runtime::Runtime};
+use tokio::fs::File;
 use tokio_util::{
     bytes::{Bytes, BytesMut},
     codec::{BytesCodec, FramedRead},
@@ -31,10 +34,9 @@ use uniffi;
 pub struct LocalDockerOrchestrator {
     /// API to interact with Docker daemon.
     pub api: Docker,
-    async_driver: Runtime,
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 #[async_trait::async_trait]
 impl Orchestrator for LocalDockerOrchestrator {
     fn start_with_altimage_blocking(
@@ -43,28 +45,29 @@ impl Orchestrator for LocalDockerOrchestrator {
         pod_job: &PodJob,
         image: &ImageKind,
     ) -> Result<PodRun> {
-        self.async_driver
-            .block_on(self.start_with_altimage(namespace_lookup, pod_job, image))
+        ASYNC_RUNTIME.block_on(self.start_with_altimage(namespace_lookup, pod_job, image))
     }
     fn start_blocking(
         &self,
         namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
     ) -> Result<PodRun> {
-        self.async_driver
-            .block_on(self.start(namespace_lookup, pod_job))
+        ASYNC_RUNTIME.block_on(self.start(namespace_lookup, pod_job))
     }
     fn list_blocking(&self) -> Result<Vec<PodRun>> {
-        self.async_driver.block_on(self.list())
+        ASYNC_RUNTIME.block_on(self.list())
     }
     fn delete_blocking(&self, pod_run: &PodRun) -> Result<()> {
-        self.async_driver.block_on(self.delete(pod_run))
+        ASYNC_RUNTIME.block_on(self.delete(pod_run))
     }
     fn get_info_blocking(&self, pod_run: &PodRun) -> Result<RunInfo> {
-        self.async_driver.block_on(self.get_info(pod_run))
+        ASYNC_RUNTIME.block_on(self.get_info(pod_run))
     }
     fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.async_driver.block_on(self.get_result(pod_run))
+        ASYNC_RUNTIME.block_on(self.get_result(pod_run))
+    }
+    fn get_logs_blocking(&self, pod_run: &PodRun) -> Result<String> {
+        ASYNC_RUNTIME.block_on(self.get_logs(pod_run))
     }
     #[expect(
         clippy::try_err,
@@ -162,25 +165,8 @@ impl Orchestrator for LocalDockerOrchestrator {
         .await?
         .map(|result| {
             let (assigned_name, run_info) = result?;
-            let mut pod: Pod =
-                serde_json::from_str(get(&run_info.labels, &"org.orcapod.pod".to_owned())?)?;
-            pod.annotation = serde_json::from_str(get(
-                &run_info.labels,
-                &"org.orcapod.pod.annotation".to_owned(),
-            )?)?;
-            pod.hash
-                .clone_from(get(&run_info.labels, &"org.orcapod.pod.hash".to_owned())?);
-            let mut pod_job: PodJob =
-                serde_json::from_str(get(&run_info.labels, &"org.orcapod.pod_job".to_owned())?)?;
-            pod_job.annotation = serde_json::from_str(get(
-                &run_info.labels,
-                &"org.orcapod.pod_job.annotation".to_owned(),
-            )?)?;
-            pod_job.hash.clone_from(get(
-                &run_info.labels,
-                &"org.orcapod.pod_job.hash".to_owned(),
-            )?);
-            pod_job.pod = pod.into();
+            let pod_job: PodJob =
+                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job")?)?;
             Ok(PodRun::new::<Self>(&pod_job, assigned_name))
         })
         .collect()
@@ -232,6 +218,22 @@ impl Orchestrator for LocalDockerOrchestrator {
         }
         let result_info = self.get_info(pod_run).await?;
 
+        PodResult::new(
+            None,
+            Arc::clone(&pod_run.pod_job),
+            pod_run.assigned_name.clone(),
+            result_info.status,
+            result_info.created,
+            result_info
+                .terminated
+                .context(selector::InvalidPodResultTerminatedDatetime {
+                    pod_job_hash: pod_run.pod_job.hash.clone(),
+                })?,
+            self.get_logs(pod_run).await?,
+        )
+    }
+
+    async fn get_logs(&self, pod_run: &PodRun) -> Result<String> {
         let mut std_out = Vec::new();
         let mut std_err = Vec::new();
 
@@ -254,8 +256,9 @@ impl Orchestrator for LocalDockerOrchestrator {
                 LogOutput::StdErr { message } => {
                     std_err.extend(message.to_vec());
                 }
-                LogOutput::StdIn { .. } => todo!(),
-                LogOutput::Console { .. } => todo!(),
+                LogOutput::StdIn { .. } | LogOutput::Console { .. } => {
+                    // Ignore stdin logs, as they are not relevant for our use case
+                }
             });
 
         let mut logs = String::from_utf8_lossy(&std_out).to_string();
@@ -264,7 +267,8 @@ impl Orchestrator for LocalDockerOrchestrator {
             logs.push_str(&String::from_utf8_lossy(&std_err));
         }
 
-        // Check for errors, if exist, attach it to logs
+        // Check for errors in the docker state, if exist, attach it to logs
+        // This is for when the container exits immediately due to a bad command or similar
         let error = self
             .api
             .inspect_container(&pod_run.assigned_name, None)
@@ -282,19 +286,7 @@ impl Orchestrator for LocalDockerOrchestrator {
             logs.push_str(&error);
         }
 
-        PodResult::new(
-            None,
-            Arc::clone(&pod_run.pod_job),
-            pod_run.assigned_name.clone(),
-            result_info.status,
-            result_info.created,
-            result_info
-                .terminated
-                .context(selector::InvalidPodResultTerminatedDatetime {
-                    pod_job_hash: pod_run.pod_job.hash.clone(),
-                })?,
-            logs,
-        )
+        Ok(logs)
     }
 }
 
@@ -310,7 +302,6 @@ impl LocalDockerOrchestrator {
     pub fn new() -> Result<Self> {
         Ok(Self {
             api: Docker::connect_with_local_defaults()?,
-            async_driver: Runtime::new()?,
         })
     }
 }

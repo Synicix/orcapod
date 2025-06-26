@@ -8,16 +8,11 @@
 )]
 
 use names::{Generator, Name};
-use orcapod::{
-    core::pipeline::{Pipeline, PipelineBuilder, PipelineJob},
-    uniffi::{
-        error::Result,
-        model::{
-            Annotation, Blob, BlobKind, Mapper, OrcaPath, PathInfo, PathSet, Pod, PodJob, PodResult,
-        },
-        orchestrator::Status,
-        store::{ModelID, ModelInfo, Store},
-    },
+use orcapod::uniffi::{
+    error::Result,
+    model::{Annotation, Blob, BlobKind, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
+    orchestrator::Status,
+    store::{ModelID, ModelInfo, Store},
 };
 use std::{
     collections::HashMap,
@@ -87,7 +82,7 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
                 "extra-style".to_owned(),
                 PathSet::Unary(Blob {
                     kind: BlobKind::File,
-                    location: OrcaPath {
+                    location: URI {
                         namespace: "default".to_owned(),
                         path: PathBuf::from("styles/mosaic.t7"),
                     },
@@ -99,7 +94,7 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
                 PathSet::Collection(vec![
                     Blob {
                         kind: BlobKind::File,
-                        location: OrcaPath {
+                        location: URI {
                             namespace: "default".to_owned(),
                             path: PathBuf::from("styles/style1.t7"),
                         },
@@ -107,7 +102,7 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
                     },
                     Blob {
                         kind: BlobKind::File,
-                        location: OrcaPath {
+                        location: URI {
                             namespace: "default".to_owned(),
                             path: PathBuf::from("images/subject.jpeg"),
                         },
@@ -116,7 +111,7 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
                 ]),
             ),
         ]),
-        OrcaPath {
+        URI {
             namespace: "default".to_owned(),
             path: PathBuf::from("output"),
         },

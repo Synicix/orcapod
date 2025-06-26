@@ -73,10 +73,13 @@
         "getset",
         "strsim",
         "getrandom",
-        "wasi",
-        "strsim",
-        "petgraph",
-        "rfind",
-        "MPSC"
+        "wasi"
+    ],
+    "useGitignore": false,
+    "ignorePaths": [
+        "Cargo.lock",
+        "target",
+        "*.dot",
+        "tests/.tmp"
     ]
 }
