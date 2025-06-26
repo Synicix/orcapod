@@ -25,7 +25,7 @@ pub enum Status {
     Completed,
     /// Run failed with the provided error code.
     Failed(i16),
-    /// Catch all for all undefine behavior
+    /// Catch all for all undefined behavior
     Unknown,
     /// No status set.
     #[default]
