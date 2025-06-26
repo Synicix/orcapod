@@ -205,6 +205,7 @@ pub struct PodResult {
     /// Time in epoch when terminated in seconds.
     pub terminated: u64,
     /// Output logs of container
+    #[serde(default)]
     pub logs: String,
 }
 
@@ -233,6 +234,7 @@ impl PodResult {
             terminated,
             logs,
         };
+
         Ok(Self {
             hash: hash_buffer(to_yaml(&pod_result_no_hash)?),
             ..pod_result_no_hash
