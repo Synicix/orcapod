@@ -4,12 +4,9 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use crate::{
-    core::pipeline,
-    uniffi::{
-        error::{Kind, OrcaError, Result},
-        model::{Annotation, Mapper, PathSet, Pod},
-    },
+use crate::uniffi::{
+    error::{Kind, OrcaError, Result},
+    model::{Annotation, Mapper, PathSet, Pod},
 };
 use petgraph::prelude::NodeIndex;
 use petgraph::{

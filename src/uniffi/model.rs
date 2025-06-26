@@ -338,7 +338,7 @@ pub struct Blob {
 
 impl Blob {
     /// Constructor for Blob class with an empty checksum that will be computed when is used in `PodJob`
-    pub const fn new(kind: BlobKind, location: OrcaPath) -> Self {
+    pub const fn new(kind: BlobKind, location: URI) -> Self {
         Self {
             kind,
             location,
