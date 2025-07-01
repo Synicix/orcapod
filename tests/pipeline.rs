@@ -147,8 +147,6 @@ fn labels() -> Result<()> {
 /// This test two things:
 /// 1. An edge can be added between two nodes that are already in the pipeline, which will trigger a rehash of the `to_node` and its children.
 /// 2. The pipeline verification will fail if a node has two parents and the node is not a `JoinNode`.
-///
-/// Pending Design Question: Should we keep the pipeline builder which will later be mapped to python or pull it out and dump in a simpler one for the this stride?
 fn none_join_node_with_two_parents() -> Result<()> {
     // Get the fixture pipeline A -> B -> C
     let mut pipeline_builder = pipeline_builder()?;
