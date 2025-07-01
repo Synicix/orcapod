@@ -304,6 +304,20 @@ pub struct Blob {
     /// BLOB contents checksum.
     pub checksum: String,
 }
+impl Blob {
+    /// Construct a new BLOB instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `Blob` instance.
+    pub const fn new(kind: BlobKind, location: URI) -> Self {
+        Self {
+            kind,
+            location,
+            checksum: String::new(),
+        }
+    }
+}
 /// File or directory options for BLOBs.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum BlobKind {

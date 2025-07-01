@@ -73,6 +73,16 @@ impl Kernel {
             Self::Joiner => hash_buffer(b"Joiner"),
         }
     }
+
+    fn extract_annotation_name_if_exist(&self) -> Option<String> {
+        match self {
+            Self::Pod(pod) => pod
+                .annotation
+                .as_ref()
+                .map(|annotation| annotation.name.clone()),
+            Self::Mapper(_) | Self::Joiner => None,
+        }
+    }
 }
 
 impl From<Pod> for Kernel {
@@ -90,9 +100,9 @@ impl From<Mapper> for Kernel {
 /// Struct to represent a node in the pipeline graph
 pub struct Node {
     /// Hash is kernel hash + `parent_node_hashes`
-    hash: String,
+    pub hash: String,
     /// Hash of the kernel to use in `kernel_lut`
-    kernel_hash: String,
+    pub kernel_hash: String,
 }
 
 impl Node {
@@ -267,12 +277,12 @@ impl Pipeline {
     }
 
     /// Function to get the parents of a node
-    pub fn get_parents_key_for_node(&self, node_hash: &str) -> impl Iterator<Item = &Node> {
+    pub fn get_parents_key_for_node(&self, node: &Node) -> impl Iterator<Item = &Node> {
         // Find the NodeIndex for the given node_key
         let node_index = self
             .graph
             .node_indices()
-            .find(|&idx| self.graph[idx].hash == node_hash);
+            .find(|&idx| self.graph[idx] == *node);
         node_index.into_iter().flat_map(move |idx| {
             self.graph
                 .neighbors_directed(idx, Incoming)
@@ -422,7 +432,7 @@ impl PipelineBuilder {
     /// Cases:
     /// 1. If the kernel is not in the `pipeline.kernel_lut`, then add it to the lut and graph
     /// 2. If the kernel is already in the `pipeline.kernel_lut`, then skip adding it to the lut and graph
-    pub fn add_node(&mut self, node: impl Into<Kernel>, label: Option<&str>) -> NodeHandle<'_> {
+    pub fn add_node(&mut self, node: impl Into<Kernel>) -> NodeHandle<'_> {
         // Convert the node into a Kernel and add it to kernel_lut if it does not exist
         let kernel = node.into();
         self.add_kernel_to_lut_if_not_exists(&kernel);
@@ -431,8 +441,8 @@ impl PipelineBuilder {
         let node_to_add = Node::new(&kernel.get_hash(), vec![]);
 
         // Add the label to the pipeline.labels if it exists
-        if let Some(node_label) = label {
-            self.add_node_label_if_not_exists(&node_to_add.hash, node_label);
+        if let Some(node_label) = Kernel::extract_annotation_name_if_exist(&kernel) {
+            self.add_node_label_if_not_exists(&node_to_add.hash, &node_label);
         }
 
         // Insert the node into the graph

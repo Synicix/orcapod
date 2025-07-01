@@ -8,11 +8,14 @@
 )]
 
 use names::{Generator, Name};
-use orcapod::uniffi::{
-    error::Result,
-    model::{Annotation, Blob, BlobKind, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
-    orchestrator::Status,
-    store::{ModelID, ModelInfo, Store},
+use orcapod::{
+    core::pipeline::{Mapper, Pipeline, PipelineBuilder, PipelineJob},
+    uniffi::{
+        error::Result,
+        model::{Annotation, Blob, BlobKind, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
+        orchestrator::Status,
+        store::{ModelID, ModelInfo, Store},
+    },
 };
 use std::{
     collections::HashMap,
@@ -185,6 +188,99 @@ pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestCo
         build_context_location,
         binary_location: binary_location.as_ref().to_path_buf(),
     })
+}
+
+// Pipeline stuff
+
+pub fn pod_append_name(pod_name: &str) -> Result<Pod> {
+    Pod::new(
+        Some(Annotation {
+            name: pod_name.to_owned(),
+            description: "Pod append it's own name to the end of the file.".to_owned(),
+            version: "1.0.0".to_owned(),
+        }),
+        "alpine:3.14".to_owned(),
+        format!(
+            "cp /input/input.txt /output/input.txt && echo \"Touch by Pod: {pod_name}\" >> /output/input.txt"
+        ),
+        HashMap::from([(
+            "input_text_file".to_owned(),
+            PathInfo {
+                path: PathBuf::from("/input/input.txt"),
+                match_pattern: r".*\.txt".to_owned(),
+            },
+        )]),
+        PathBuf::from("/output"),
+        HashMap::from([(
+            "output_txt_file".to_owned(),
+            PathInfo {
+                path: PathBuf::from("/output/input.txt"),
+                match_pattern: r".*\.txt".to_owned(),
+            },
+        )]),
+        "N/A".to_owned(),
+        0.25,        // 250 millicores as frac cores
+        1_u64 << 30, // 1GiB in bytes
+        None,
+    )
+}
+
+pub fn pipeline_builder() -> Result<PipelineBuilder> {
+    // Create a simple pipeline where the functions job is to add append their name into the input file
+    // Structure: A -> B -> C
+
+    // Create the components of the pipeline
+    let pod_a = pod_append_name("A")?;
+    let pod_b = pod_append_name("B")?;
+    let pod_c = pod_append_name("C")?;
+
+    let file_mapper = Mapper::new(HashMap::from([(
+        "input_text_file".to_owned(),
+        "output_txt_file".to_owned(),
+    )]))?;
+
+    // Use the builder to create the pipeline
+    let mut pipeline_builder = PipelineBuilder::new(Some(Annotation {
+        name: "Example Pipeline".to_owned(),
+        description: "This is an example pipeline that appends names to a file.".to_owned(),
+        version: "1.0.0".to_owned(),
+    }));
+
+    // Add the first node then chain the rest
+    pipeline_builder
+        .add_node(pod_a)
+        .add_child(file_mapper.clone())?
+        .add_child(pod_b)?
+        .add_child(file_mapper)?
+        .add_child(pod_c)?;
+
+    Ok(pipeline_builder)
+}
+
+pub fn pipeline() -> Result<Pipeline> {
+    Ok(pipeline_builder()?.into())
+}
+
+pub fn pipeline_job() -> Result<PipelineJob> {
+    // Create a simple pipeline_job
+    PipelineJob::new(
+        pipeline()?,
+        HashMap::from([(
+            "input_text_file".to_owned(),
+            PathSet::Unary(Blob::new(
+                BlobKind::File,
+                URI {
+                    namespace: "default".to_owned(),
+                    path: PathBuf::from("data/input.txt"),
+                },
+            )),
+        )]),
+        Some(Annotation {
+            name: "Pipeline Job".to_owned(),
+            description: "Example pipeline_job".to_owned(),
+            version: "1.0.0".to_owned(),
+        }),
+    )
 }
 
 // --- util ---
