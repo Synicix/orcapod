@@ -457,9 +457,10 @@ impl PipelineBuilder {
     ///
     /// # Errors
     /// Will error out if the `from_node_hash` or `to_node_hash` is not found in the graph
-    pub fn add_edge(&mut self, from_node_hash: &str, to_node_hash: &str) -> Result<()> {
+    pub fn add_edge(&mut self, from_node_hash: &str, to_node_hash: &str) -> Result<String> {
         // Check if both nodes exist in the graph
-        self.pipeline
+        let from_node_idx = self
+            .pipeline
             .graph
             .node_indices()
             .find(|&idx| self.pipeline.graph[idx].hash == from_node_hash)
@@ -482,15 +483,16 @@ impl PipelineBuilder {
                 },
             })?;
 
-        self.propagate_new_parent_hash_to_children(to_node_idx, from_node_hash)?;
-        Ok(())
+        // Add the new edge
+        self.pipeline.graph.add_edge(from_node_idx, to_node_idx, ());
+        self.propagate_new_parent_hash_to_children(to_node_idx, from_node_hash)
     }
 
     fn propagate_new_parent_hash_to_children(
         &mut self,
         node_idx: NodeIndex,
         new_parent_hash: &str,
-    ) -> Result<()> {
+    ) -> Result<String> {
         // First, collect the parent hashes before mutably borrowing the graph
         let node = &self.pipeline.graph[node_idx];
         let kernel_hash = node.kernel_hash.clone();
@@ -540,51 +542,7 @@ impl PipelineBuilder {
             self.propagate_new_parent_hash_to_children(child_idx, &new_hash)?;
         }
 
-        Ok(())
-    }
-
-    /// Function to add an edge from a node to another node, mainly used in chaining
-    ///
-    /// # Errors
-    /// Will error out if the `from_node_hash` is not found in the graph or if the `to_kernel` is not a valid kernel
-    pub fn add_edge_from_node(
-        &mut self,
-        from_node_hash: &str,
-        to_kernel: impl Into<Kernel>,
-    ) -> Result<NodeHandle> {
-        // Convert the node into a Kernel and add it to kernel_lut if it does not exist
-        let kernel = to_kernel.into();
-        self.add_kernel_to_lut_if_not_exists(&kernel);
-
-        // Create the node
-        let node = Node {
-            hash: Node::compute_hash(&kernel.get_hash(), vec![from_node_hash]),
-            kernel_hash: kernel.get_hash(),
-        };
-
-        // Add the node to the pipeline
-        let new_node_idx = self.pipeline.graph.add_node(node.clone());
-        self.pipeline.graph.add_edge(
-            self.pipeline
-                .graph
-                .node_indices()
-                .find(|&idx| self.pipeline.graph[idx].hash == from_node_hash)
-                .ok_or(OrcaError {
-                    kind: Kind::NodeNotFound {
-                        parent_node_key: from_node_hash.to_owned(),
-                        backtrace: Some(Backtrace::capture()),
-                    },
-                })?,
-            new_node_idx,
-            (),
-        );
-
-        self.add_label_from_kernel_annotation_if_not_exist(&node.hash, &kernel);
-
-        Ok(NodeHandle {
-            node_hash: node.hash,
-            pipeline_builder: self,
-        })
+        Ok(new_hash)
     }
 
     fn add_kernel_to_lut_if_not_exists(&mut self, kernel: &Kernel) {
@@ -607,7 +565,7 @@ impl PipelineBuilder {
     }
 }
 
-/// Handle to store the `node_key` for the user to add children to it
+/// Handle to store the `node_hash` for the user to add children to it
 pub struct NodeHandle<'a> {
     /// The hash of the node
     pub node_hash: String,
@@ -616,12 +574,21 @@ pub struct NodeHandle<'a> {
 }
 
 impl NodeHandle<'_> {
-    /// Add an node as a child to the current `node_key`
+    /// Add an kernel as a child to the current `node_hash`
+    ///
     /// # Errors
-    /// Shouldn't error as long the self is in the graph
-    pub fn add_child(&mut self, node: impl Into<Kernel>) -> Result<NodeHandle<'_>> {
-        self.pipeline_builder
-            .add_edge_from_node(&self.node_hash, node)
+    /// Errors out if `node_hash` is not in the pipeline or if the kernel is not a valid kernel
+    pub fn add_child(&mut self, kernel: impl Into<Kernel>) -> Result<NodeHandle<'_>> {
+        // Add the node to the pipeline first
+        let mut node_handle = self.pipeline_builder.add_node(kernel.into());
+
+        // Add the edge from the current node to the new node
+        node_handle.node_hash = node_handle
+            .pipeline_builder
+            .add_edge(&self.node_hash, node_handle.node_hash.as_str())?;
+        // Print out pipeline for debugging
+
+        Ok(node_handle)
     }
 }
 
