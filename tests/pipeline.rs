@@ -127,6 +127,23 @@ fn dangling_child_nodes() -> Result<()> {
 }
 
 #[test]
+fn labels() -> Result<()> {
+    let pipeline = pipeline()?;
+
+    for node_label in ["A", "B", "C"] {
+        assert!(
+            pipeline
+                .labels
+                .iter()
+                .any(|(_, label)| *label == node_label),
+            "Missing label for node {node_label}."
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
 /// This test two things:
 /// 1. An edge can be added between two nodes that are already in the pipeline, which will trigger a rehash of the `to_node` and its children.
 /// 2. The pipeline verification will fail if a node has two parents and the node is not a `JoinNode`.
