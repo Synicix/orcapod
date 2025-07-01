@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     backtrace::Backtrace,
     collections::{HashMap, HashSet},
+    string::String,
     vec,
 };
 
@@ -440,10 +441,7 @@ impl PipelineBuilder {
         // Build the node
         let node_to_add = Node::new(&kernel.get_hash(), vec![]);
 
-        // Add the label to the pipeline.labels if it exists
-        if let Some(node_label) = Kernel::extract_annotation_name_if_exist(&kernel) {
-            self.add_node_label_if_not_exists(&node_to_add.hash, &node_label);
-        }
+        self.add_label_from_kernel_annotation_if_not_exist(&node_to_add.hash, &kernel);
 
         // Insert the node into the graph
         self.pipeline.graph.add_node(node_to_add.clone());
@@ -454,7 +452,102 @@ impl PipelineBuilder {
         }
     }
 
-    fn add_edge_from_node(
+    /// Function to add an edge from one node to another in the pipeline graph
+    /// This requires them to already in the pipeline
+    ///
+    /// # Errors
+    /// Will error out if the `from_node_hash` or `to_node_hash` is not found in the graph
+    pub fn add_edge(&mut self, from_node_hash: &str, to_node_hash: &str) -> Result<()> {
+        // Check if both nodes exist in the graph
+        self.pipeline
+            .graph
+            .node_indices()
+            .find(|&idx| self.pipeline.graph[idx].hash == from_node_hash)
+            .ok_or(OrcaError {
+                kind: Kind::NodeNotFound {
+                    parent_node_key: from_node_hash.to_owned(),
+                    backtrace: Some(Backtrace::capture()),
+                },
+            })?;
+
+        let to_node_idx = self
+            .pipeline
+            .graph
+            .node_indices()
+            .find(|&idx| self.pipeline.graph[idx].hash == to_node_hash)
+            .ok_or(OrcaError {
+                kind: Kind::NodeNotFound {
+                    parent_node_key: to_node_hash.to_owned(),
+                    backtrace: Some(Backtrace::capture()),
+                },
+            })?;
+
+        self.propagate_new_parent_hash_to_children(to_node_idx, from_node_hash)?;
+        Ok(())
+    }
+
+    fn propagate_new_parent_hash_to_children(
+        &mut self,
+        node_idx: NodeIndex,
+        new_parent_hash: &str,
+    ) -> Result<()> {
+        // First, collect the parent hashes before mutably borrowing the graph
+        let node = &self.pipeline.graph[node_idx];
+        let kernel_hash = node.kernel_hash.clone();
+        let old_hash = node.hash.clone();
+
+        let mut parent_hashes = self
+            .pipeline
+            .get_parents_key_for_node(node)
+            .map(|parent_node| parent_node.hash.clone())
+            .collect::<Vec<_>>();
+        parent_hashes.push(new_parent_hash.to_owned());
+
+        let new_hash = Node::compute_hash(
+            &kernel_hash,
+            parent_hashes.iter().map(String::as_str).collect(),
+        );
+
+        // Now, safely mutably borrow the node and update its hash
+        if let Some(mut_node) = self.pipeline.graph.node_weight_mut(node_idx) {
+            mut_node.hash.clone_from(&new_hash);
+        } else {
+            return Err(OrcaError {
+                kind: Kind::NodeNotFound {
+                    parent_node_key: old_hash.clone(),
+                    backtrace: Some(Backtrace::capture()),
+                },
+            });
+        }
+
+        // Update the labels if the node had a label
+        if let Some(label) = self.pipeline.labels.get(&old_hash) {
+            // Insert new one
+            self.pipeline.labels.insert(new_hash.clone(), label.clone());
+            // Delete the old
+            self.pipeline.labels.remove(&old_hash);
+        }
+
+        // Now, propagate the new hash to all children of this node
+        let children_indices = self
+            .pipeline
+            .graph
+            .neighbors_directed(node_idx, Outgoing)
+            .collect::<Vec<_>>();
+
+        for child_idx in children_indices {
+            // Recursively propagate the new parent hash to each child
+            self.propagate_new_parent_hash_to_children(child_idx, &new_hash)?;
+        }
+
+        Ok(())
+    }
+
+    /// Function to add an edge from a node to another node, mainly used in chaining
+    ///
+    /// # Errors
+    /// Will error out if the `from_node_hash` is not found in the graph or if the `to_kernel` is not a valid kernel
+    pub fn add_edge_from_node(
         &mut self,
         from_node_hash: &str,
         to_kernel: impl Into<Kernel>,
@@ -486,6 +579,8 @@ impl PipelineBuilder {
             (),
         );
 
+        self.add_label_from_kernel_annotation_if_not_exist(&node.hash, &kernel);
+
         Ok(NodeHandle {
             node_hash: node.hash,
             pipeline_builder: self,
@@ -500,21 +595,24 @@ impl PipelineBuilder {
             .or_insert_with(|| kernel.clone());
     }
 
-    fn add_node_label_if_not_exists(&mut self, node_hash: &str, label: &str) {
-        // Check if the label already exists
-        if !self.pipeline.labels.contains_key(node_hash) {
-            // If it does not, then we need to add it to the labels
+    fn add_label_from_kernel_annotation_if_not_exist(&mut self, node_hash: &str, kernel: &Kernel) {
+        // Add label if there is an annotation that exist from kernel
+        if let Some(label) = Kernel::extract_annotation_name_if_exist(kernel) {
+            // Check if the label already exists
             self.pipeline
                 .labels
-                .insert(node_hash.to_owned(), label.to_owned());
+                .entry(node_hash.to_owned())
+                .or_insert_with(|| label.clone());
         }
     }
 }
 
 /// Handle to store the `node_key` for the user to add children to it
 pub struct NodeHandle<'a> {
-    node_hash: String,
-    pipeline_builder: &'a mut PipelineBuilder,
+    /// The hash of the node
+    pub node_hash: String,
+    /// Mutable reference to the `PipelineBuilder` to allow adding children
+    pub pipeline_builder: &'a mut PipelineBuilder,
 }
 
 impl NodeHandle<'_> {
