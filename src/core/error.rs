@@ -89,16 +89,21 @@ fn format_stack(backtrace: Option<&Backtrace>) -> String {
 impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
+            Kind::DisconnectedLeafNode { backtrace, .. }
+            | Kind::DisconnectedRootNode { backtrace, .. }
+            | Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
             | Kind::InvalidPodResultTerminatedDatetime { backtrace, .. }
             | Kind::KeyMissing { backtrace, .. }
             | Kind::NoAnnotationFound { backtrace, .. }
             | Kind::NoContainerNames { backtrace, .. }
+            | Kind::NodeNotFound { backtrace, .. }
             | Kind::NoFileName { backtrace, .. }
             | Kind::NoMatchingPodRun { backtrace, .. }
+            | Kind::NonJoinerNodeHasMoreThanOneParent { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
+            | Kind::MissingStreamKey { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }

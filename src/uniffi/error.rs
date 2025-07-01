@@ -15,6 +15,7 @@ use std::{
     result,
 };
 use uniffi;
+
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
@@ -22,6 +23,22 @@ pub type Result<T, E = OrcaError> = result::Result<T, E>;
 #[snafu(module(selector), visibility(pub(crate)), context(suffix(false)))]
 #[uniffi(flat_error)]
 pub(crate) enum Kind {
+    #[snafu(display(
+        "Disconnected leaf node with name: {}. Should be included in output_nodes",
+        node_name
+    ))]
+    DisconnectedLeafNode {
+        node_name: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display(
+        "Disconnected root node with name: {}. Should be included in input_nodes",
+        node_name
+    ))]
+    DisconnectedRootNode {
+        node_name: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display(
         "Received an empty response when attempting to load the alternate container image file: {path:?}."
     ))]
@@ -58,6 +75,11 @@ pub(crate) enum Kind {
     },
     #[snafu(display("No known container names."))]
     NoContainerNames { backtrace: Option<Backtrace> },
+    #[snafu(display("Invalid parent node key: {parent_node_key}."))]
+    NodeNotFound {
+        parent_node_key: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("Missing file or directory name ({path:?})."))]
     NoFileName {
         path: PathBuf,
@@ -68,9 +90,19 @@ pub(crate) enum Kind {
         pod_job_hash: String,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display("None joiner node has more than one parent"))]
+    NonJoinerNodeHasMoreThanOneParent {
+        node_name: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("No tags found in provided container alternate image: {path:?}."))]
     NoTagFoundInContainerAltImage {
         path: PathBuf,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Input map missing required packet keys: {missing_keys:?}"))]
+    MissingStreamKey {
+        missing_keys: Vec<String>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
