@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize as _, Deserializer, Serialize, Serializer};
 use serde_yaml::{self, Value};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     result,
     sync::Arc,
 };
@@ -46,6 +46,17 @@ where
     S: Serializer,
 {
     let sorted = map.iter().collect::<BTreeMap<_, _>>();
+    sorted.serialize(serializer)
+}
+
+pub(crate) fn serialize_hashset<S, K: Ord + Serialize>(
+    set: &HashSet<K>,
+    serializer: S,
+) -> result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let sorted = set.iter().collect::<BTreeSet<_>>();
     sorted.serialize(serializer)
 }
 

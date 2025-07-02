@@ -75,7 +75,8 @@
         "getrandom",
         "wasi",
         "petgraph",
-        "rfind"
+        "rfind",
+        "hashset"
     ],
     "useGitignore": false,
     "ignorePaths": [

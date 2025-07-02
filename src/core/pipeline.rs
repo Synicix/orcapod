@@ -21,7 +21,7 @@ use petgraph::{
     Graph,
 };
 
-use crate::core::model::serialize_hashmap;
+use crate::core::model::{serialize_hashmap, serialize_hashset};
 
 use super::util::get;
 
@@ -155,20 +155,25 @@ impl Node {
 /// Pipeline struct
 #[derive(Serialize, Debug, Default, Clone)]
 pub struct Pipeline {
-    hash: String,
-    #[serde(skip)]
+    /// Hash to unique identify the pipeline
+    pub hash: String,
+    #[serde(default)]
     /// Annotation for the pipeline
     pub annotation: Option<Annotation>,
     /// Strings are the hash of the kernel, and the value is the kernel itself.
     /// Mainly used to prevent duplicate storage of kernels share by multiple nodes.
+    #[serde(serialize_with = "serialize_hashmap")]
     pub kernel_lut: HashMap<String, Kernel>,
     /// Labels provided by the user for each node where the key is the node hash and the value the actual label
+    #[serde(serialize_with = "serialize_hashmap")]
     pub labels: HashMap<String, String>,
     /// Strings are unique hashes of the nodes with the _{`num_matches`}
     pub graph: Graph<Node, ()>,
     /// Nodes where the input data should be fed into
+    #[serde(serialize_with = "serialize_hashset")]
     pub input_nodes: HashSet<String>,
     /// Nodes where the output data should be collected from and outputted.
+    #[serde(serialize_with = "serialize_hashset")]
     pub output_nodes: HashSet<String>,
 }
 
@@ -185,7 +190,7 @@ impl Pipeline {
         output_nodes: HashSet<String>,
     ) -> Result<Self> {
         let pipeline = Self {
-            hash: String::new(), // TODO: Need to implement to yaml then hash that
+            hash: String::new(),
             annotation,
             kernel_lut,
             labels,
@@ -195,7 +200,12 @@ impl Pipeline {
         };
 
         pipeline.verify()?;
-        Ok(pipeline)
+
+        // Compute the hash of the pipeline
+        Ok(Self {
+            hash: hash_buffer(to_yaml(&pipeline)?),
+            ..pipeline
+        })
     }
 
     /// Function to verify that the pipeline is valid

@@ -8,11 +8,28 @@
 pub mod fixture;
 use fixture::{pipeline, pipeline_builder};
 use orcapod::{
-    core::pipeline::{Kernel, Node, Pipeline},
+    core::{
+        model::to_yaml,
+        pipeline::{Kernel, Node, Pipeline},
+    },
     uniffi::error::Result,
 };
 
 use crate::fixture::pod_append_name;
+
+#[test]
+fn hash() -> Result<()> {
+    let pipeline = pipeline()?;
+
+    println!("Pipeline hash: {}", to_yaml(&pipeline)?);
+
+    // Verify that the hash is not empty
+    assert_eq!(
+        pipeline.hash, "fd123900470dedf7ed0eb45e17c62c89228732d55fc1938c4fab5edac25e9f7f",
+        "Pipeline hash should not be empty."
+    );
+    Ok(())
+}
 
 #[test]
 fn root_nodes() -> Result<()> {
