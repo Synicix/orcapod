@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use snafu::OptionExt as _;
 use std::{
     backtrace::Backtrace,
     collections::{HashMap, HashSet},
@@ -9,7 +10,7 @@ use std::{
 use crate::{
     core::{crypto::hash_buffer, model::to_yaml},
     uniffi::{
-        error::{Kind, OrcaError, Result},
+        error::{Kind, OrcaError, Result, selector},
         model::{Annotation, PathSet, Pod},
     },
 };
@@ -300,30 +301,6 @@ impl PartialEq for Pipeline {
     }
 }
 
-impl From<PipelineBuilder> for Pipeline {
-    fn from(val: PipelineBuilder) -> Self {
-        let mut pipeline = val.pipeline;
-
-        if pipeline.input_nodes.is_empty() {
-            // If there are no input nodes, then we need to set the input nodes to the root nodes
-            pipeline.input_nodes = pipeline
-                .get_root_nodes()
-                .map(|node| node.hash.clone())
-                .collect();
-        }
-
-        if pipeline.output_nodes.is_empty() {
-            // If there are no output nodes, then we need to set the output nodes to the leaf nodes
-            pipeline.output_nodes = pipeline
-                .get_leaf_nodes()
-                .map(|node| node.hash.clone())
-                .collect();
-        }
-
-        pipeline
-    }
-}
-
 #[derive(Serialize, Debug, Clone)]
 /// `PipelineJob` struct
 /// This struct is used to store the pipeline and the input map
@@ -483,9 +460,105 @@ impl PipelineBuilder {
                 },
             })?;
 
-        // Add the new edge
-        self.pipeline.graph.add_edge(from_node_idx, to_node_idx, ());
+        // Figure out if node already has a parent and it not of type joiner
+        // If so, we need to inject a joiner in between the multiple parents and
+        // Get all the parents indices
+        let mut parents_indices: Vec<NodeIndex> = self
+            .pipeline
+            .graph
+            .neighbors_directed(to_node_idx, Incoming)
+            .collect();
+
+        if parents_indices.is_empty() {
+            // Add the new edge
+            self.pipeline.graph.add_edge(from_node_idx, to_node_idx, ());
+        } else {
+            // There is already a preexisting parent, so we need to add a joiner node
+
+            // Delete all the edges from the parents to the target node
+            for parent_idx in &parents_indices {
+                self.pipeline.graph.remove_edge(
+                    self.pipeline
+                        .graph
+                        .find_edge(*parent_idx, to_node_idx)
+                        .context(selector::NoEdgeFound {
+                            from_node_hash: from_node_hash.to_owned(),
+                            to_node_hash: to_node_hash.to_owned(),
+                        })?,
+                );
+            }
+
+            // Get all the parents hashes
+            let parent_hashes_string = parents_indices
+                .iter()
+                .map(|idx| self.pipeline.graph[*idx].hash.clone())
+                .collect::<Vec<_>>();
+
+            let mut parent_hashes = parent_hashes_string
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+
+            // Add in the new parent hash to the list of parent hashes
+            parent_hashes.push(from_node_hash);
+
+            // Add the joiner node if it doesn't already exists to the kernel_lut
+            let joiner_kernel_hash = self.add_kernel_to_lut_if_not_exists(&Kernel::Joiner);
+
+            // Create the joiner node
+            let joiner_node = Node::new(&joiner_kernel_hash, parent_hashes);
+
+            // Add the joiner node to the graph
+            let joiner_node_idx = self.pipeline.graph.add_node(joiner_node);
+
+            // Add the from_node_idx as a parent of the joiner node
+            parents_indices.push(from_node_idx);
+
+            // Add the new parents edges to the joiner node
+            for parent_idx in &parents_indices {
+                self.pipeline
+                    .graph
+                    .add_edge(*parent_idx, joiner_node_idx, ());
+            }
+
+            // Add edges from the joiner node to the target node
+            self.pipeline
+                .graph
+                .add_edge(joiner_node_idx, to_node_idx, ());
+        }
+
         self.propagate_new_parent_hash_to_children(to_node_idx, from_node_hash)
+    }
+
+    /// Function to convert the `PipelineBuilder` into a `Pipeline`
+    ///
+    /// # Errors
+    /// Will error out if the pipeline is not valid
+    pub fn to_pipeline(&self) -> Result<Pipeline> {
+        Pipeline::new(
+            self.pipeline.annotation.clone(),
+            self.pipeline.kernel_lut.clone(),
+            self.pipeline.labels.clone(),
+            self.pipeline.graph.clone(),
+            if self.pipeline.input_nodes.is_empty() {
+                // If there are no input nodes, then we need to set the input nodes to the root nodes
+                self.pipeline
+                    .get_root_nodes()
+                    .map(|node| node.hash.clone())
+                    .collect()
+            } else {
+                self.pipeline.input_nodes.clone()
+            },
+            if self.pipeline.output_nodes.is_empty() {
+                // If there are no output nodes, then we need to set the output nodes to the leaf nodes
+                self.pipeline
+                    .get_leaf_nodes()
+                    .map(|node| node.hash.clone())
+                    .collect()
+            } else {
+                self.pipeline.output_nodes.clone()
+            },
+        )
     }
 
     fn propagate_new_parent_hash_to_children(
@@ -545,12 +618,19 @@ impl PipelineBuilder {
         Ok(new_hash)
     }
 
-    fn add_kernel_to_lut_if_not_exists(&mut self, kernel: &Kernel) {
+    /// Function to add a kernel to the pipeline's kernel lookup table (`kernel_lut`)
+    /// If the kernel already exists, it will not be added again.
+    /// # Returns
+    /// Returns the hash of the kernel that was added or already exists
+    fn add_kernel_to_lut_if_not_exists(&mut self, kernel: &Kernel) -> String {
+        let kernel_hash = kernel.get_hash();
         // Check if the kernel is already in the pipeline.kernel_lut
         self.pipeline
             .kernel_lut
-            .entry(kernel.get_hash())
+            .entry(kernel_hash.clone())
             .or_insert_with(|| kernel.clone());
+
+        kernel_hash
     }
 
     fn add_label_from_kernel_annotation_if_not_exist(&mut self, node_hash: &str, kernel: &Kernel) {

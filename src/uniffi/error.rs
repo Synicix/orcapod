@@ -75,6 +75,12 @@ pub(crate) enum Kind {
     },
     #[snafu(display("No known container names."))]
     NoContainerNames { backtrace: Option<Backtrace> },
+    #[snafu(display("Could not find edge between: {from_node_hash} and {to_node_hash}."))]
+    NoEdgeFound {
+        from_node_hash: String,
+        to_node_hash: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("Invalid parent node key: {parent_node_key}."))]
     NodeNotFound {
         parent_node_key: String,

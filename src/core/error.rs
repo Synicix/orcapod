@@ -98,6 +98,7 @@ impl fmt::Debug for OrcaError {
             | Kind::KeyMissing { backtrace, .. }
             | Kind::NoAnnotationFound { backtrace, .. }
             | Kind::NoContainerNames { backtrace, .. }
+            | Kind::NoEdgeFound { backtrace, .. }
             | Kind::NodeNotFound { backtrace, .. }
             | Kind::NoFileName { backtrace, .. }
             | Kind::NoMatchingPodRun { backtrace, .. }

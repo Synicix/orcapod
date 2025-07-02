@@ -258,7 +258,7 @@ pub fn pipeline_builder() -> Result<PipelineBuilder> {
 }
 
 pub fn pipeline() -> Result<Pipeline> {
-    Ok(pipeline_builder()?.into())
+    pipeline_builder()?.to_pipeline()
 }
 
 pub fn pipeline_job() -> Result<PipelineJob> {

@@ -7,7 +7,7 @@
 
 pub mod fixture;
 use fixture::{pipeline, pipeline_builder};
-use orcapod::uniffi::error::Result;
+use orcapod::{core::pipeline::Pipeline, uniffi::error::Result};
 
 use crate::fixture::pod_append_name;
 
@@ -151,19 +151,6 @@ fn none_join_node_with_two_parents() -> Result<()> {
     // Get the fixture pipeline A -> B -> C
     let mut pipeline_builder = pipeline_builder()?;
 
-    // Set the parent and child nodes
-    pipeline_builder.pipeline.input_nodes = pipeline_builder
-        .pipeline
-        .get_root_nodes()
-        .map(|node| node.hash.clone())
-        .collect();
-
-    pipeline_builder.pipeline.output_nodes = pipeline_builder
-        .pipeline
-        .get_leaf_nodes()
-        .map(|node| node.hash.clone())
-        .collect();
-
     // Create a new node called D and set it as root node
     let node_d = pod_append_name("D")?;
 
@@ -220,10 +207,10 @@ fn none_join_node_with_two_parents() -> Result<()> {
         "Node C hash was not updated after adding a new edge D -> B."
     );
 
-    // Verify the pipeline which should fail
-    assert!(
-        pipeline_builder.pipeline.verify().is_err(),
-        "Pipeline verification should fail when a node has two parents."
-    );
+    // Convert into pipeline
+    let pipeline: Pipeline = pipeline_builder.to_pipeline()?;
+
+    // Verify should work
+    pipeline.verify()?;
     Ok(())
 }
