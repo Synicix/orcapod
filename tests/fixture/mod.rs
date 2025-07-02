@@ -267,13 +267,14 @@ pub fn pipeline_job() -> Result<PipelineJob> {
         pipeline()?,
         HashMap::from([(
             "input_text_file".to_owned(),
-            PathSet::Unary(Blob::new(
-                BlobKind::File,
-                URI {
+            PathSet::Unary(Blob {
+                kind: BlobKind::File,
+                location: URI {
                     namespace: "default".to_owned(),
                     path: PathBuf::from("data/input.txt"),
                 },
-            )),
+                ..Default::default()
+            }),
         )]),
         Some(Annotation {
             name: "Pipeline Job".to_owned(),

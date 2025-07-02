@@ -8,10 +8,7 @@
 pub mod fixture;
 use fixture::{pipeline, pipeline_builder};
 use orcapod::{
-    core::{
-        model::to_yaml,
-        pipeline::{Kernel, Node, Pipeline},
-    },
+    core::pipeline::{Kernel, Node, Pipeline},
     uniffi::error::Result,
 };
 
@@ -20,8 +17,6 @@ use crate::fixture::pod_append_name;
 #[test]
 fn hash() -> Result<()> {
     let pipeline = pipeline()?;
-
-    println!("Pipeline hash: {}", to_yaml(&pipeline)?);
 
     // Verify that the hash is not empty
     assert_eq!(
