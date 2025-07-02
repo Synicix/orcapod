@@ -235,8 +235,8 @@ pub fn pipeline_builder() -> Result<PipelineBuilder> {
     let pod_c = pod_append_name("C")?;
 
     let file_mapper = Mapper::new(HashMap::from([(
-        "input_text_file".to_owned(),
         "output_txt_file".to_owned(),
+        "input_text_file".to_owned(),
     )]))?;
 
     // Use the builder to create the pipeline

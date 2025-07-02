@@ -48,6 +48,12 @@ pub(crate) enum Kind {
     },
     #[snafu(display("Out of generated random names."))]
     GeneratedNamesOverflow { backtrace: Option<Backtrace> },
+    #[snafu(display("Input spec key {input_spec_key} of node {node_hash} is not met by parents"))]
+    InputSpecNotMet {
+        node_hash: String,
+        input_spec_key: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("{source} ({path:?})."))]
     InvalidFilepath {
         path: PathBuf,
@@ -81,11 +87,7 @@ pub(crate) enum Kind {
         to_node_hash: String,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display("Invalid parent node key: {parent_node_key}."))]
-    NodeNotFound {
-        parent_node_key: String,
-        backtrace: Option<Backtrace>,
-    },
+
     #[snafu(display("Missing file or directory name ({path:?})."))]
     NoFileName {
         path: PathBuf,
@@ -109,6 +111,11 @@ pub(crate) enum Kind {
     #[snafu(display("Input map missing required packet keys: {missing_keys:?}"))]
     MissingStreamKey {
         missing_keys: Vec<String>,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Invalid parent node hash: {parent_node_hash}."))]
+    ParentNodeNotFound {
+        parent_node_hash: String,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

@@ -85,6 +85,27 @@ impl Kernel {
             Self::Mapper(_) | Self::Joiner => None,
         }
     }
+
+    fn get_input_keys(&self) -> Vec<&String> {
+        match self {
+            Self::Pod(pod) => pod.input_spec.keys().collect(),
+            Self::Mapper(mapper) => mapper.mapping.keys().collect(),
+            Self::Joiner => Vec::new(), // Joiner does not have input keys
+        }
+    }
+
+    /// Returns the output keys for the kernel, except for joiner which returns None
+    fn get_output_keys(&self) -> Vec<&String> {
+        match self {
+            Self::Pod(pod) => pod.output_spec.keys().collect(),
+            Self::Mapper(mapper) => mapper.mapping.values().collect(),
+            Self::Joiner => Vec::new(), // Joiner does not have output keys
+        }
+    }
+
+    const fn is_joiner(&self) -> bool {
+        matches!(self, Self::Joiner)
+    }
 }
 
 impl From<Pod> for Kernel {
@@ -188,7 +209,7 @@ impl Pipeline {
         // Check if all root nodes are listed in the input_nodes, if not there are disconnected nodes
         self.get_root_nodes().try_for_each(|node| {
             if self.input_nodes.contains(&node.hash) {
-                Ok(())
+                Ok::<(), OrcaError>(())
             } else {
                 Err(OrcaError {
                     kind: Kind::DisconnectedRootNode {
@@ -202,7 +223,7 @@ impl Pipeline {
         // Check if all leaf nodes are listed in the output_nodes, if not there are disconnected nodes
         self.get_leaf_nodes().try_for_each(|node| {
             if self.output_nodes.contains(&node.hash) {
-                Ok(())
+                Ok::<(), OrcaError>(())
             } else {
                 Err(OrcaError {
                     kind: Kind::DisconnectedLeafNode {
@@ -233,7 +254,69 @@ impl Pipeline {
             Ok(())
         })?;
 
+        // For every node that is not a joiner or root node, verify that input specs are met
+        self.graph.node_indices().try_for_each(|node_idx| {
+            let node = &self.graph[node_idx];
+            if !self.input_nodes.contains(&node.hash)
+                && !get(&self.kernel_lut, &node.kernel_hash)?.is_joiner()
+            {
+                self.verify_input_spec_are_met(node_idx)?;
+            }
+            Ok::<_, OrcaError>(())
+        })?;
+
         Ok(())
+    }
+
+    fn verify_input_spec_are_met(&self, node_idx: NodeIndex) -> Result<()> {
+        // Get the kernel for the node
+        let kernel = get(&self.kernel_lut, &self.graph[node_idx].kernel_hash)?;
+
+        // Get the parent node for the current node which should only be one parent
+        let parent_node = self
+            .get_parents_for_node(&self.graph[node_idx])
+            .next()
+            .context(selector::ParentNodeNotFound {
+                parent_node_hash: self.graph[node_idx].hash.clone(),
+            })?;
+
+        // Get the output_keys from the parent kernel, unless it is a joiner.
+        let parent_output_keys = self.get_output_keys(parent_node)?;
+
+        // Verify that the input spec of the kernel is met by the parent output keys
+        kernel.get_input_keys().iter().try_for_each(|input_key| {
+            if parent_output_keys.contains(input_key) {
+                Ok(())
+            } else {
+                Err(OrcaError {
+                    kind: Kind::InputSpecNotMet {
+                        node_hash: self.graph[node_idx].hash.clone(),
+                        input_spec_key: (*input_key).clone(),
+                        backtrace: Some(Backtrace::capture()),
+                    },
+                })
+            }
+        })?;
+
+        Ok(())
+    }
+
+    fn get_output_keys(&self, node: &Node) -> Result<Vec<&String>> {
+        // Get the kernel for the node
+        let kernel = get(&self.kernel_lut, &node.kernel_hash)?;
+
+        if kernel.is_joiner() {
+            // Parent node is type joiner, thus we need get its parent's output_keys
+            Ok(self
+                .get_parents_for_node(node)
+                .map(|parent_node| self.get_output_keys(parent_node))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect())
+        } else {
+            Ok(kernel.get_output_keys())
+        }
     }
 
     /// # Errors
@@ -279,7 +362,7 @@ impl Pipeline {
     }
 
     /// Function to get the parents of a node
-    pub fn get_parents_key_for_node(&self, node: &Node) -> impl Iterator<Item = &Node> {
+    pub fn get_parents_for_node(&self, node: &Node) -> impl Iterator<Item = &Node> {
         // Find the NodeIndex for the given node_key
         let node_index = self
             .graph
@@ -442,8 +525,8 @@ impl PipelineBuilder {
             .node_indices()
             .find(|&idx| self.pipeline.graph[idx].hash == from_node_hash)
             .ok_or(OrcaError {
-                kind: Kind::NodeNotFound {
-                    parent_node_key: from_node_hash.to_owned(),
+                kind: Kind::ParentNodeNotFound {
+                    parent_node_hash: from_node_hash.to_owned(),
                     backtrace: Some(Backtrace::capture()),
                 },
             })?;
@@ -454,8 +537,8 @@ impl PipelineBuilder {
             .node_indices()
             .find(|&idx| self.pipeline.graph[idx].hash == to_node_hash)
             .ok_or(OrcaError {
-                kind: Kind::NodeNotFound {
-                    parent_node_key: to_node_hash.to_owned(),
+                kind: Kind::ParentNodeNotFound {
+                    parent_node_hash: to_node_hash.to_owned(),
                     backtrace: Some(Backtrace::capture()),
                 },
             })?;
@@ -573,7 +656,7 @@ impl PipelineBuilder {
 
         let mut parent_hashes = self
             .pipeline
-            .get_parents_key_for_node(node)
+            .get_parents_for_node(node)
             .map(|parent_node| parent_node.hash.clone())
             .collect::<Vec<_>>();
         parent_hashes.push(new_parent_hash.to_owned());
@@ -588,8 +671,8 @@ impl PipelineBuilder {
             mut_node.hash.clone_from(&new_hash);
         } else {
             return Err(OrcaError {
-                kind: Kind::NodeNotFound {
-                    parent_node_key: old_hash.clone(),
+                kind: Kind::ParentNodeNotFound {
+                    parent_node_hash: old_hash.clone(),
                     backtrace: Some(Backtrace::capture()),
                 },
             });

@@ -94,17 +94,18 @@ impl fmt::Debug for OrcaError {
             | Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
+            | Kind::InputSpecNotMet { backtrace, .. }
             | Kind::InvalidPodResultTerminatedDatetime { backtrace, .. }
             | Kind::KeyMissing { backtrace, .. }
             | Kind::NoAnnotationFound { backtrace, .. }
             | Kind::NoContainerNames { backtrace, .. }
             | Kind::NoEdgeFound { backtrace, .. }
-            | Kind::NodeNotFound { backtrace, .. }
             | Kind::NoFileName { backtrace, .. }
             | Kind::NoMatchingPodRun { backtrace, .. }
             | Kind::NonJoinerNodeHasMoreThanOneParent { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
             | Kind::MissingStreamKey { backtrace, .. }
+            | Kind::ParentNodeNotFound { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }

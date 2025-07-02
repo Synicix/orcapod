@@ -35,7 +35,7 @@ fn get_parents_key_for_node() -> Result<()> {
     let pipeline = pipeline()?;
     let node_key = pipeline.get_root_nodes().next().unwrap();
 
-    assert_eq!(pipeline.get_parents_key_for_node(node_key).count(), 0);
+    assert_eq!(pipeline.get_parents_for_node(node_key).count(), 0);
     Ok(())
 }
 
