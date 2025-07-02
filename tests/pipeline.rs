@@ -7,7 +7,10 @@
 
 pub mod fixture;
 use fixture::{pipeline, pipeline_builder};
-use orcapod::{core::pipeline::Pipeline, uniffi::error::Result};
+use orcapod::{
+    core::pipeline::{Kernel, Node, Pipeline},
+    uniffi::error::Result,
+};
 
 use crate::fixture::pod_append_name;
 
@@ -127,6 +130,45 @@ fn dangling_child_nodes() -> Result<()> {
 }
 
 #[test]
+fn none_join_node_with_two_parents() -> Result<()> {
+    let mut pipeline = pipeline()?;
+
+    // Make a new node and connect it to node B
+    let pod_d = pod_append_name("D")?;
+    let kernel: Kernel = pod_d.into();
+
+    let node_d = Node::new(&kernel.get_hash(), vec![]);
+
+    // Add it to the pipeline and input_node
+    pipeline.input_nodes.insert(node_d.hash.clone());
+    let node_idx = pipeline.graph.add_node(node_d);
+
+    // Add the edge from D -> B
+    let node_b_hash = pipeline
+        .labels
+        .iter()
+        .find(|(_, label)| *label == "B")
+        .unwrap()
+        .0;
+
+    let node_b_idx = pipeline
+        .graph
+        .node_indices()
+        .find(|idx| pipeline.graph[*idx].hash == *node_b_hash)
+        .unwrap();
+
+    pipeline.graph.add_edge(node_idx, node_b_idx, ());
+
+    // Run the verify where it should fail
+    assert!(
+        pipeline.verify().is_err(),
+        "Pipeline verification should fail when a node has two parents and is not a JoinNode."
+    );
+
+    Ok(())
+}
+
+#[test]
 fn labels() -> Result<()> {
     let pipeline = pipeline()?;
 
@@ -147,7 +189,7 @@ fn labels() -> Result<()> {
 /// This test two things:
 /// 1. An edge can be added between two nodes that are already in the pipeline, which will trigger a rehash of the `to_node` and its children.
 /// 2. The pipeline verification will fail if a node has two parents and the node is not a `JoinNode`.
-fn none_join_node_with_two_parents() -> Result<()> {
+fn join_injection() -> Result<()> {
     // Get the fixture pipeline A -> B -> C
     let mut pipeline_builder = pipeline_builder()?;
 
