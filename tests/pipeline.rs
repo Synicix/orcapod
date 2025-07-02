@@ -188,7 +188,8 @@ fn labels() -> Result<()> {
 #[test]
 /// This test two things:
 /// 1. An edge can be added between two nodes that are already in the pipeline, which will trigger a rehash of the `to_node` and its children.
-/// 2. The pipeline verification will fail if a node has two parents and the node is not a `JoinNode`.
+/// 2. If the `to_node` already has a parent, a joiner node will be added before the `to_node` which will take all the previous parents of the `to_node` and the new edge.
+/// 3. Following 2. It should propagate the recomputation of the hashes to all leaf nodes of the pipeline.
 fn join_injection() -> Result<()> {
     // Get the fixture pipeline A -> B -> C
     let mut pipeline_builder = pipeline_builder()?;
