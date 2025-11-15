@@ -83,6 +83,7 @@
         "colinianking",
         "itertools",
         "pathset",
+        "starfix"
     ],
     "useGitignore": false,
     "ignorePaths": [
