@@ -3,8 +3,8 @@
 	"build": {
 		"dockerfile": "./Dockerfile"
 	},
-	"postStartCommand": "sudo rm /var/run/docker.pid; sudo dockerd",
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+	"postStartCommand": "bash .devcontainer/docker-startup.sh",
 	"hostRequirements": {
 		"cpus": 2,
 		"memory": "8gb",
