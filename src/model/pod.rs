@@ -10,7 +10,7 @@ use crate::{
     error::{Kind, OrcaError, Result},
     model::{
         Annotation, ToYaml,
-        packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
+        packet::{ArrowPacket, Blob, BlobKind, PathInfo, PathSet, URI},
         serialize_hashmap, serialize_hashmap_option,
     },
     util::get,
@@ -159,7 +159,7 @@ pub struct PodJob {
     pub pod: Arc<Pod>,
     /// Attached, external input packet.
     #[serde(serialize_with = "serialize_hashmap")]
-    pub input_packet: Packet,
+    pub input_packet: ArrowPacket,
     /// Attached, external output directory.
     pub output_dir: URI,
     /// Maximum allowable cores in fractional cores for the computation.
@@ -182,7 +182,7 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Arc<Pod>,
-        mut input_packet: Packet,
+        mut input_packet: ArrowPacket,
         output_dir: URI,
         cpu_limit: f32,
         memory_limit: u64,
@@ -251,7 +251,7 @@ pub struct PodResult {
     pub pod_job: Arc<PodJob>,
     /// Produced, external output packet.
     #[serde(serialize_with = "serialize_hashmap")]
-    pub output_packet: Packet,
+    pub output_packet: ArrowPacket,
     /// Name given by orchestrator.
     pub assigned_name: String,
     /// Status of compute run when terminated.

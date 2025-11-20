@@ -12,7 +12,7 @@ use orcapod::{
     error::Result,
     model::{
         Annotation,
-        packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
+        packet::{Blob, BlobKind, ArrowPacket, PathInfo, PathSet, URI},
         pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
         pod::{Pod, PodJob, PodResult, PodStatus, RecommendedSpecs},
     },
@@ -181,7 +181,7 @@ pub fn pod_custom(
 
 pub fn pod_job_custom(
     pod: Pod,
-    input_packet: Packet,
+    input_packet: ArrowPacket,
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
 ) -> Result<PodJob> {
     PodJob::new(

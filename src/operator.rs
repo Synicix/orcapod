@@ -7,14 +7,18 @@ use tokio::sync::Mutex;
 use crate::{
     crypto::hash_buffer,
     error::Result,
-    model::{ToYaml, packet::Packet, serialize_hashmap},
+    model::{ToYaml, packet::ArrowPacket, serialize_hashmap},
 };
 
 /// Trait that all operators must implement for it to work in the pipeline
 #[async_trait::async_trait]
 pub trait Operator {
     /// Method where the operator get pass a packet for processing one at a time
-    async fn process_packet(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>>;
+    async fn process_packet(
+        &self,
+        stream_name: String,
+        packet: ArrowPacket,
+    ) -> Result<Vec<ArrowPacket>>;
 }
 
 /// Operator class that map `input_keys` to `output_key`, effectively renaming it
@@ -52,7 +56,7 @@ impl MapOperator {
 /// Operator class that join packets from multiple parent streams into one packet
 pub struct JoinOperator {
     parent_count: usize,
-    received_packets: Arc<Mutex<HashMap<String, Vec<Packet>>>>,
+    received_packets: Arc<Mutex<HashMap<String, Vec<ArrowPacket>>>>,
 }
 
 impl JoinOperator {
@@ -67,7 +71,11 @@ impl JoinOperator {
 
 #[async_trait::async_trait]
 impl Operator for JoinOperator {
-    async fn process_packet(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>> {
+    async fn process_packet(
+        &self,
+        stream_name: String,
+        packet: ArrowPacket,
+    ) -> Result<Vec<ArrowPacket>> {
         let mut received_packets = self.received_packets.lock().await;
         received_packets
             .entry(stream_name.clone())
@@ -105,7 +113,7 @@ impl Operator for JoinOperator {
 
 #[async_trait::async_trait]
 impl Operator for MapOperator {
-    async fn process_packet(&self, _: String, packet: Packet) -> Result<Vec<Packet>> {
+    async fn process_packet(&self, _: String, packet: ArrowPacket) -> Result<Vec<ArrowPacket>> {
         Ok(vec![
             packet
                 .iter()
@@ -140,7 +148,7 @@ mod tests {
 
     use crate::{
         error::Result,
-        model::packet::{Blob, BlobKind, Packet, PathSet, URI},
+        model::packet::{ArrowPacket, Blob, BlobKind, PathSet, URI},
         operator::{JoinOperator, MapOperator, Operator},
     };
     use std::{collections::HashMap, path::PathBuf};
@@ -161,8 +169,8 @@ mod tests {
 
     async fn next_batch(
         operator: impl Operator,
-        packets: Vec<(String, Packet)>,
-    ) -> Result<Vec<Packet>> {
+        packets: Vec<(String, ArrowPacket)>,
+    ) -> Result<Vec<ArrowPacket>> {
         let mut next_packets = vec![];
         for (stream_name, packet) in packets {
             next_packets.extend(operator.process_packet(stream_name, packet).await?);
@@ -178,7 +186,7 @@ mod tests {
             .map(|i| {
                 (
                     "left".into(),
-                    Packet::from([make_packet_key(
+                    ArrowPacket::from([make_packet_key(
                         "subject".into(),
                         format!("left/subject{i}.png"),
                     )]),
@@ -190,7 +198,7 @@ mod tests {
             .map(|i| {
                 (
                     "right".into(),
-                    Packet::from([make_packet_key(
+                    ArrowPacket::from([make_packet_key(
                         "style".into(),
                         format!("right/style{i}.t7"),
                     )]),
@@ -204,27 +212,27 @@ mod tests {
         assert_eq!(
             next_batch(operator, input_streams).await?,
             vec![
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject0.png".into()),
                     make_packet_key("style".into(), "right/style0.t7".into()),
                 ]),
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject1.png".into()),
                     make_packet_key("style".into(), "right/style0.t7".into()),
                 ]),
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject2.png".into()),
                     make_packet_key("style".into(), "right/style0.t7".into()),
                 ]),
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject0.png".into()),
                     make_packet_key("style".into(), "right/style1.t7".into()),
                 ]),
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject1.png".into()),
                     make_packet_key("style".into(), "right/style1.t7".into()),
                 ]),
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject2.png".into()),
                     make_packet_key("style".into(), "right/style1.t7".into()),
                 ]),
@@ -243,7 +251,7 @@ mod tests {
             operator
                 .process_packet(
                     "right".into(),
-                    Packet::from([make_packet_key("style".into(), "right/style0.t7".into())])
+                    ArrowPacket::from([make_packet_key("style".into(), "right/style0.t7".into())])
                 )
                 .await?,
             vec![],
@@ -254,7 +262,7 @@ mod tests {
             operator
                 .process_packet(
                     "right".into(),
-                    Packet::from([make_packet_key("style".into(), "right/style1.t7".into())])
+                    ArrowPacket::from([make_packet_key("style".into(), "right/style1.t7".into())])
                 )
                 .await?,
             vec![],
@@ -265,18 +273,18 @@ mod tests {
             operator
                 .process_packet(
                     "left".into(),
-                    Packet::from([make_packet_key(
+                    ArrowPacket::from([make_packet_key(
                         "subject".into(),
                         "left/subject0.png".into()
                     )])
                 )
                 .await?,
             vec![
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject0.png".into()),
                     make_packet_key("style".into(), "right/style0.t7".into()),
                 ]),
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject0.png".into()),
                     make_packet_key("style".into(), "right/style1.t7".into()),
                 ]),
@@ -291,7 +299,7 @@ mod tests {
                     .map(|i| {
                         (
                             "left".into(),
-                            Packet::from([make_packet_key(
+                            ArrowPacket::from([make_packet_key(
                                 "subject".into(),
                                 format!("left/subject{i}.png"),
                             )]),
@@ -301,19 +309,19 @@ mod tests {
             )
             .await?,
             vec![
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject1.png".into()),
                     make_packet_key("style".into(), "right/style0.t7".into()),
                 ]),
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject1.png".into()),
                     make_packet_key("style".into(), "right/style1.t7".into()),
                 ]),
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject2.png".into()),
                     make_packet_key("style".into(), "right/style0.t7".into()),
                 ]),
-                Packet::from([
+                ArrowPacket::from([
                     make_packet_key("subject".into(), "left/subject2.png".into()),
                     make_packet_key("style".into(), "right/style1.t7".into()),
                 ]),
@@ -332,13 +340,13 @@ mod tests {
             operator
                 .process_packet(
                     "parent".into(),
-                    Packet::from([
+                    ArrowPacket::from([
                         make_packet_key("key_old".into(), "some/key.txt".into()),
                         make_packet_key("subject".into(), "some/subject.txt".into()),
                     ]),
                 )
                 .await?,
-            vec![Packet::from([
+            vec![ArrowPacket::from([
                 make_packet_key("key_new".into(), "some/key.txt".into()),
                 make_packet_key("subject".into(), "some/subject.txt".into()),
             ]),],

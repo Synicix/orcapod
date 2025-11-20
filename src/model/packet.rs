@@ -1,5 +1,11 @@
+use arrow::array::RecordBatch;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf};
+use sha2::Sha256;
+use starfix::arrow_digester::{self, ArrowDigester};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 use uniffi;
 
 use crate::{error::Result, util::get};
@@ -92,5 +98,51 @@ impl PathSet {
     }
 }
 
-/// A complete set of inputs to be provided to a computational unit.
-pub type Packet = HashMap<String, PathSet>;
+trait Packet {
+    fn get_hash(&self) -> Vec<u8>;
+
+    /// Get the field names of the arrow table contained in the packet, not including tags
+    fn get_fields_name(&self) -> HashSet<String>;
+
+    /// Get tags column names if any
+    fn get_tags_col_names(&self) -> Option<HashSet<String>>;
+}
+
+/// Unit of data that is used within pipeline and pods
+pub struct ArrowPacket {
+    /// Unique hash identifier for the packet
+    hash: Vec<u8>,
+    /// Arrow Record Batch containing the data for the packet
+    record_batch: RecordBatch,
+    /// Optional tags associated with the packet, which should be fields names of the arrow_table
+    tags: Option<HashSet<String>>,
+}
+
+impl ArrowPacket {
+    pub fn new(record_batch: RecordBatch, tags: Option<HashSet<String>>) -> Self {
+        Self {
+            hash: ArrowDigester::<Sha256>::hash_record_batch(&record_batch),
+            record_batch,
+            tags,
+        }
+    }
+}
+
+impl Packet for ArrowPacket {
+    fn get_hash(&self) -> Vec<u8> {
+        self.hash.clone()
+    }
+
+    fn get_fields_name(&self) -> HashSet<String> {
+        self.record_batch
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.name().clone())
+            .collect()
+    }
+
+    fn get_tags_col_names(&self) -> Option<String> {
+        self.tags.clone()
+    }
+}

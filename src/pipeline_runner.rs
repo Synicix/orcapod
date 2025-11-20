@@ -19,7 +19,7 @@ use crate::{
         selector::{self},
     },
     model::{
-        packet::{Packet, PathSet, URI},
+        packet::{ArrowPacket, PathSet, URI},
         pipeline::{Kernel, PipelineJob, PipelineNode, PipelineResult, PipelineStatus},
         pod::{Pod, PodJob, PodResult, PodStatus},
         serialize_hashmap,
@@ -75,7 +75,7 @@ impl PipelineRunInternal {
     }
 
     // Utils functions
-    async fn send_packets(&self, node_id: &str, output_packets: &Vec<Packet>) -> Result<()> {
+    async fn send_packets(&self, node_id: &str, output_packets: &Vec<ArrowPacket>) -> Result<()> {
         Ok(self
             .session
             .put(
@@ -344,7 +344,7 @@ impl DockerPipelineRunner {
 
         while let Ok(payload) = subscriber.recv_async().await {
             // Extract the message from the payload
-            let packets: Vec<Packet> = serde_json::from_slice(&payload.payload().to_bytes())?;
+            let packets: Vec<ArrowPacket> = serde_json::from_slice(&payload.payload().to_bytes())?;
 
             if packets.is_empty() {
                 // Output node exited, thus we can exit the capture task too
@@ -540,7 +540,7 @@ impl DockerPipelineRunner {
                 .context(selector::AgentCommunicationFailure)?;
 
             // Extract out the packets
-            let packets: Vec<Packet> = serde_json::from_slice(&sample.payload().to_bytes())?;
+            let packets: Vec<ArrowPacket> = serde_json::from_slice(&sample.payload().to_bytes())?;
 
             // Check if the packets are empty, if so that means the node is finished processing
             if packets.is_empty() {
@@ -589,7 +589,11 @@ impl DockerPipelineRunner {
 /// As a result, each processor only needs to worry about writing their own function to process the msg
 #[async_trait]
 trait NodeProcessor: Send + Sync {
-    async fn process_incoming_packet(&mut self, sender_node_hash: &str, incoming_packet: &Packet);
+    async fn process_incoming_packet(
+        &mut self,
+        sender_node_hash: &str,
+        incoming_packet: &ArrowPacket,
+    );
 
     /// Notifies the processor that the parent node has completed processing
     /// If it is the last parent to complete, it will wait for all processing task to finish
@@ -626,7 +630,7 @@ impl PodProcessor {
         node_hash: String,
         pod: Arc<Pod>,
         incoming_packet: HashMap<String, PathSet>,
-    ) -> Result<Packet> {
+    ) -> Result<ArrowPacket> {
         // Hash the input_packet to create a unique identifier for the pod job
         let input_packet_hash = {
             let mut buf = Vec::new();
