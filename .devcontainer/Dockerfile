@@ -50,4 +50,5 @@ RUN \
     # useful in examples
     uv pip install ipykernel eclipse-zenoh -p ~/.local/share/base && \
     echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
+
 ENV VIRTUAL_ENV=/root/.local/share/base

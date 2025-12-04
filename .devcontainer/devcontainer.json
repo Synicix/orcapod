@@ -37,8 +37,12 @@
 				"tintinweb.graphviz-interactive-preview", // Graphviz DOT preview
 				"ms-python.python", // Python IDE
 				"ms-toolsai.jupyter", // Jupyter IDE
-				"ms-python.black-formatter" // Python code formatter
+				"ms-python.black-formatter", // Python code formatter
 			]
+		},
+		"settings": {
+			"python.analysis.typeCheckingMode": "strict",
+			"python.languageServer": "Pylance"
 		}
 	},
 	"features": {
