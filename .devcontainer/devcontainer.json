@@ -8,7 +8,8 @@
 	"hostRequirements": {
 		"cpus": 2,
 		"memory": "8gb",
-		"storage": "32gb"
+		"storage": "32gb",
+		"gpu": false
 	},
 	"remoteEnv": {
 		"RUST_BACKTRACE": "1"
@@ -19,7 +20,6 @@
 	"privileged": true,
 	"runArgs": [
 		"--cgroupns=host",
-		"--gpus=all"
 	],
 	"mounts": [
 		"source=docker_data,target=/var/lib/docker,type=volume"
